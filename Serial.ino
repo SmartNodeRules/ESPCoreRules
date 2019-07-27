@@ -34,21 +34,18 @@ void serial()
 
       String action = InputBuffer_Serial;
 
-      #if FEATURE_RULES
+      if (Settings.RulesSerial){
         String event = "";
         if(action.substring(0,3) == F("20;")){
-          action = action.substring(14); // RFLink, strip "20;xx;ESPEASY;" from incoming message
+          action = action.substring(6); // RFLink, strip "20;xx;" from incoming message
           event = "RFLink#" + action;
         }
         else
           event = "Serial#" + action;
         rulesProcessing(FILE_RULES, event);
-      #endif
-
-      if (action.substring(0, 4) == F("MSG:")) {
-        String msg = action.substring(4);
-        UDPSend(msg);
       }
+
+      PluginCall(PLUGIN_SERIAL_IN, action, dummyString);
       ExecuteCommand(InputBuffer_Serial);
       SerialInByteCounter = 0;
       InputBuffer_Serial[0] = 0; // serial data processed, clear buffer

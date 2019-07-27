@@ -40,6 +40,7 @@ void ExecuteCommand(const char *Line)
     String strP2 = parseString(strLine, 4);
     String strP3 = parseString(strLine, 5);
     String strP4 = parseString(strLine, 6);
+    String strP5 = parseString(strLine, 7);
 
     if (setting.equalsIgnoreCase(F("Baudrate"))){
       if (Par2){
@@ -62,6 +63,10 @@ void ExecuteCommand(const char *Line)
 
     if (setting.equalsIgnoreCase(F("Name"))){
       strcpy(Settings.Name, strP1.c_str());
+    }
+
+    if (setting.equalsIgnoreCase(F("Group"))){
+      strcpy(Settings.Group, strP1.c_str());
     }
 
     if (setting.equalsIgnoreCase(F("Network"))){
@@ -104,30 +109,79 @@ void ExecuteCommand(const char *Line)
     if (setting.equalsIgnoreCase(F("WifiAPKey")))
       strcpy(SecuritySettings.WifiAPKey, strP1.c_str());
 
+    if (setting.equalsIgnoreCase(F("MSGBUS"))){
+      if(strP1.equalsIgnoreCase(F("UDP")))
+        Settings.UseMSGBusUDP = (Par3 == 1);
+      if(strP1.equalsIgnoreCase(F("MQTT")))
+        Settings.UseMSGBusMQTT = (Par3 == 1);
+    }
+
+    #if FEATURE_MQTT
+      if (setting.equalsIgnoreCase(F("MQTT"))){
+        char tmpString[26];
+        strP1.toCharArray(tmpString, 26);
+        str2ip(tmpString, Settings.Controller_IP);
+        Settings.ControllerPort = strP2.toInt();
+        strcpy(SecuritySettings.ControllerUser, strP3.c_str());
+        strcpy(SecuritySettings.ControllerPassword, strP4.c_str());
+        MQTTConnect();
+      }
+    #endif
+
+    if (setting.equalsIgnoreCase(F("Rules"))){
+      if(strP1.equalsIgnoreCase(F("Clock")))
+        Settings.RulesClock = (Par3 == 1);
+      if(strP1.equalsIgnoreCase(F("Serial")))
+        Settings.RulesSerial = (Par3 == 1);
+    }
+
   }
 
 
   // operational commands
-
+  #if FEATURE_MQTT
+  if (strcasecmp_P(Command, PSTR("SubScribe")) == 0)
+  {
+    success = true;
+    MQTTclient.subscribe(&Line[10]);
+  }
+  #endif
+  
   if (strcasecmp_P(Command, PSTR("MSGBus")) == 0)
   {
     success = true;
     String msg = Line;
     msg = msg.substring(7);
-    if (msg[0] == '>') {
-      for (byte x = 0; x < CONFIRM_QUEUE_MAX ; x++) {
-        if (confirmQueue[x].State == 0) {
-          confirmQueue[x].Name = msg;
-          confirmQueue[x].Attempts = 9;
-          confirmQueue[x].State = 1;
-          confirmQueue[x].TimerTicks = 3;
-          UDPSend(msg);
-          break;
+    
+    if(Settings.UseMSGBusUDP){ 
+      if (msg[0] == '>') {
+        for (byte x = 0; x < CONFIRM_QUEUE_MAX ; x++) {
+          if (confirmQueue[x].State == 0) {
+            confirmQueue[x].Name = msg;
+            confirmQueue[x].Attempts = 9;
+            confirmQueue[x].State = 1;
+            confirmQueue[x].TimerTicks = 3;
+            UDPSend(msg);
+            break;
+          }
         }
       }
+      else
+        UDPSend(msg);
     }
-    else
-      UDPSend(msg);
+    
+    #if FEATURE_MQTT
+      if(Settings.UseMSGBusMQTT){ 
+        String topic = F(MSGBUS_TOPIC);
+        String payload = "";
+        int pos = msg.indexOf('=');
+        if(pos != -1){
+          topic += msg.substring(0,pos);
+          payload = msg.substring(pos+1);
+        }
+        MQTTclient.publish(topic.c_str(), payload.c_str(),Settings.MQTTRetainFlag);
+      }
+    #endif
   }
 
   if (strcasecmp_P(Command, PSTR("NTP")) == 0)
@@ -170,7 +224,7 @@ void ExecuteCommand(const char *Line)
   if (strcasecmp_P(Command, PSTR("Serial")) == 0)
   {
     success = true;
-    Serial.begin(57600);
+    Serial.begin(115200);
   }
 
   if (strcasecmp_P(Command, PSTR("SerialFloat")) == 0)

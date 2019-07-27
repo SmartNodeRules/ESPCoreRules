@@ -178,8 +178,6 @@ boolean ruleMatch(String& event, String& rule)
       tmpRule = rule.substring(0, pos - 1);
       return tmpEvent.equalsIgnoreCase(tmpRule);
     }
-  /*
-    todo if needed
 
     if (event.startsWith("Clock#Time")) // clock events need different handling...
     {
@@ -202,7 +200,6 @@ boolean ruleMatch(String& event, String& rule)
         }
       }
     }
-  */
 
   // parse event into verb and value
   float value = 0;
@@ -272,7 +269,42 @@ boolean ruleMatch(String& event, String& rule)
   }
   return match;
 }
+/********************************************************************************************\
+   Match clock event
+ \*********************************************************************************************/
+boolean matchClockEvent(unsigned long clockEvent, unsigned long clockSet)
+{
+  unsigned long Mask;
+  for (byte y = 0; y < 8; y++)
+  {
+    if (((clockSet >> (y * 4)) & 0xf) == 0xf)  // if nibble y has the wildcard value 0xf
+    {
+      Mask = 0xffffffff  ^ (0xFUL << (y * 4)); // Mask to wipe nibble position y.
+      clockEvent &= Mask;                      // clear nibble
+      clockEvent |= (0xFUL << (y * 4));        // fill with wildcard value 0xf
+    }
+  }
 
+  if (((clockSet >> (16)) & 0xf) == 0x8)     // if weekday nibble has the wildcard value 0x8 (workdays)
+    if (weekday() >= 2 and weekday() <= 6)   // and we have a working day today...
+    {
+      Mask = 0xffffffff  ^ (0xFUL << (16));  // Mask to wipe nibble position.
+      clockEvent &= Mask;                    // clear nibble
+      clockEvent |= (0x8UL << (16));         // fill with wildcard value 0x8
+    }
+
+  if (((clockSet >> (16)) & 0xf) == 0x9)     // if weekday nibble has the wildcard value 0x9 (weekends)
+    if (weekday() == 1 or weekday() == 7)    // and we have a weekend day today...
+    {
+      Mask = 0xffffffff  ^ (0xFUL << (16));  // Mask to wipe nibble position.
+      clockEvent &= Mask;                    // clear nibble
+      clockEvent |= (0x9UL << (16));         // fill with wildcard value 0x9
+    }
+
+  if (clockEvent == clockSet)
+    return true;
+  return false;
+}
 
 /********************************************************************************************\
   Check expression

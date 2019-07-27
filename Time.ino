@@ -135,7 +135,7 @@ void checkTime()
   if (tm.Minute != PrevMinutes)
   {
     PrevMinutes = tm.Minute;
-    if (Settings.UseRules)
+    if (Settings.RulesClock)
     {
       String weekDays = F("AllSunMonTueWedThuFriSat");
       String event = F("Clock#Time=");
@@ -148,9 +148,68 @@ void checkTime()
       if (minute() < 10)
         event += "0";
       event += minute();
-      rulesProcessing(FILE_BOOT, event);
+      rulesProcessing(FILE_RULES, event);
     }
   }
+}
+
+/********************************************************************************************\
+   Convert a string like "Sun,12:30" into a 32 bit integer
+ \*********************************************************************************************/
+unsigned long string2TimeLong(const String &str)
+{
+  // format 0000WWWWAAAABBBBCCCCDDDD
+  // WWWW=weekday, AAAA=hours tens digit, BBBB=hours, CCCC=minutes tens digit DDDD=minutes
+
+  #define TmpStr1Length 10
+  char command[20];
+  char TmpStr1[TmpStr1Length];
+  int w, x, y;
+  unsigned long a;
+  {
+    // Within a scope so the tmpString is only used for copy.
+    String tmpString(str);
+    tmpString.toLowerCase();
+    tmpString.toCharArray(command, 20);
+  }
+  unsigned long lngTime = 0;
+
+  if (GetArgv(command, TmpStr1, 1))
+  {
+    String day = TmpStr1;
+    String weekDays = F("allsunmontuewedthufrisatwrkwkd");
+    y = weekDays.indexOf(TmpStr1) / 3;
+    if (y == 0)
+      y = 0xf; // wildcard is 0xf
+    lngTime |= (unsigned long)y << 16;
+  }
+
+  if (GetArgv(command, TmpStr1, 2))
+  {
+    y = 0;
+    for (x = strlen(TmpStr1) - 1; x >= 0; x--)
+    {
+      w = TmpStr1[x];
+      if ( (w >= '0' && w <= '9') || w == '*')
+      {
+        a = 0xffffffff  ^ (0xfUL << y); // create mask to clean nibble position y
+        lngTime &= a; // maak nibble leeg
+        if (w == '*')
+          lngTime |= (0xFUL << y); // fill nibble with wildcard value
+        else
+          lngTime |= (w - '0') << y; // fill nibble with token
+        y += 4;
+      }
+      else
+        if (w == ':');
+      else
+      {
+        break;
+      }
+    }
+  }
+  #undef TmpStr1Length
+  return lngTime;
 }
 
 

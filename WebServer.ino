@@ -10,10 +10,10 @@ void WebServerInit()
   WebServer.on("/upload", HTTP_GET, handle_upload);
   WebServer.on("/upload", HTTP_POST, handle_upload_post, handleFileUpload);
   WebServer.onNotFound(handleNotFound);
-  #if defined(ESP8266)
-    httpUpdater.setup(&WebServer);
-  #endif
-  
+#if defined(ESP8266)
+  httpUpdater.setup(&WebServer);
+#endif
+
   WebServer.begin();
 }
 
@@ -54,6 +54,11 @@ byte sortedIndex[UNIT_MAX + 1];
 void handle_root() {
 
   String sCommand = WebServer.arg(F("cmd"));
+  String group = WebServer.arg("group");
+  boolean groupList = true;
+
+  if (group != "")
+    groupList = false;
 
   if (strcasecmp_P(sCommand.c_str(), PSTR("reboot")) != 0)
   {
@@ -65,35 +70,69 @@ void handle_root() {
 
     String event = F("Web#Print");
     rulesProcessing(FILE_RULES, event);
-    
+
     reply += printWebString;
     reply += F("<form><table>");
 
     // first get the list in alphabetic order
     for (byte x = 0; x < UNIT_MAX; x++)
       sortedIndex[x] = x;
-    sortDeviceArray();
-    
-    for (byte x = 0; x < UNIT_MAX; x++)
-    {
-      byte index = sortedIndex[x];
-      if (Nodes[index].IP[0] != 0)
+
+    if (groupList == true) {
+      // Show Group list
+      sortDeviceArrayGroup(); // sort on groupname
+      String prevGroup = "?";
+      for (byte x = 0; x < UNIT_MAX; x++)
       {
-        String buttonclass ="";
-        if ((String)Settings.Name == Nodes[index].nodeName)
-          buttonclass = F("button-nodelinkA");
-        else
-          buttonclass = F("button-nodelink");
-        reply += F("<TR><TD><a class=\"");
-        reply += buttonclass;
-        reply += F("\" ");
-        char url[40];
-        sprintf_P(url, PSTR("href='http://%u.%u.%u.%u'"), Nodes[index].IP[0], Nodes[index].IP[1], Nodes[index].IP[2], Nodes[index].IP[3]);
-        reply += url;
-        reply += ">";
-        reply += Nodes[index].nodeName;
-        reply += F("</a>");
-        reply += F("<TD>");
+        byte index = sortedIndex[x];
+        if (Nodes[index].IP[0] != 0) {
+          String group = Nodes[index].group;
+          if (group != prevGroup)
+          {
+            prevGroup = group;
+            reply += F("<TR><TD><a class=\"");
+            reply += F("button-nodelink");
+            reply += F("\" ");
+            reply += F("href='/?group=");
+            reply += group;
+            reply += "'>";
+            reply += group;
+            reply += F("</a>");
+            reply += F("<TD>");
+          }
+        }
+      }
+      // All nodes group button
+      reply += F("<TR><TD><a class=\"button-nodelink\" href='/?group=*'>_ALL_</a><TD>");
+    }
+    else {
+      // Show Node list
+      sortDeviceArray();  // sort on nodename
+      for (byte x = 0; x < UNIT_MAX; x++)
+      {
+        byte index = sortedIndex[x];
+        if (Nodes[index].IP[0] != 0 && (group == "*" || Nodes[index].group == group))
+        {
+          String buttonclass = "";
+          if ((String)Settings.Name == Nodes[index].nodeName)
+            buttonclass = F("button-nodelinkA");
+          else
+            buttonclass = F("button-nodelink");
+          reply += F("<TR><TD><a class=\"");
+          reply += buttonclass;
+          reply += F("\" ");
+          char url[40];
+          sprintf_P(url, PSTR("href='http://%u.%u.%u.%u"), Nodes[index].IP[0], Nodes[index].IP[1], Nodes[index].IP[2], Nodes[index].IP[3]);
+          reply += url;
+          if (group != "") {
+            reply += F("?group=");
+            reply += Nodes[index].group;
+          }
+          reply += "'>";
+          reply += Nodes[index].nodeName;
+          reply += F("</a>");
+          reply += F("<TD>");
+        }
       }
     }
 
@@ -125,30 +164,33 @@ void handle_tools() {
   addHeader(true, reply);
 
   reply += F("<form><table><TH>Tools<TH>");
-  reply += F("<TR><TD><a class=\"button-widelink\" href=\"/filelist\">Files</a><TD>File System");
-  #if defined(ESP8266)
-    reply += F("<TR><TD><a class=\"button-widelink\" href=\"/update\">Firmware</a><TD>Update Firmware");
-  #endif
-  reply += F("<TR><TD><a class=\"button-widelink\" href=\"/?cmd=reboot\">Reboot</a><TD>Reboot System");
+  reply += F("<TR><TD>File System<TD><a class=\"button-widelink\" href=\"/filelist\">Files</a>");
+#if defined(ESP8266)
+  reply += F("<TR><TD>Update Firmware<TD><a class=\"button-widelink\" href=\"/update\">Firmware</a>");
+#endif
+  reply += F("<TR><TD>Reboot System<TD><a class=\"button-widelink\" href=\"/?cmd=reboot\">Reboot</a>");
 
-  #if defined(ESP8266)
-    reply += F("<TR><TR><TD>FS:<TD>");
-    reply += ESP.getFlashChipRealSize() / 1024;
-    reply += F(" kB");
+#if defined(ESP8266)
+  reply += F("<TR><TR><TD>FlashSize:<TD>");
+  reply += ESP.getFlashChipRealSize() / 1024;
+  reply += F(" kB");
 
-    reply += F(" (US:");
-    reply += ESP.getFreeSketchSpace() / 1024;
-    reply += F(" kB)");
-  #endif
+  reply += F(" (Free:");
+  reply += ESP.getFreeSketchSpace() / 1024;
+  reply += F(" kB)");
+#endif
 
-  reply += F("<TR><TD>Mem:<TD>");
+  reply += F("<TR><TD>Free RAM:<TD>");
   reply += ESP.getFreeHeap();
 
-  reply += F("<TR><TD>Time:<TD>");
+  reply += F("<TR><TD>System Time:<TD>");
   reply += getTimeString(':');
 
   reply += F("<TR><TD>Uptime:<TD>");
   reply += uptime;
+
+  reply += F("<TR><TD>Build:<TD>");
+  reply += BUILD;
 
   reply += F("</table></form>");
   WebServer.send(200, "text/html", reply);
@@ -161,9 +203,9 @@ void handle_tools() {
 void handleNotFound() {
 
   if (loadFromFS(true, WebServer.uri())) return;
-  #ifdef FEATURE_SD
-    if (loadFromFS(false, WebServer.uri())) return;
-  #endif  
+#ifdef FEATURE_SD
+  if (loadFromFS(false, WebServer.uri())) return;
+#endif
   String message = F("URI: ");
   message += WebServer.uri();
   message += "\nMethod: ";
@@ -205,9 +247,9 @@ bool loadFromFS(boolean spiffs, String path) {
       return false;
 
     //prevent reloading stuff on every click
-    WebServer.sendHeader("Cache-Control","max-age=3600, public");
-    WebServer.sendHeader("Vary","*");
-    WebServer.sendHeader("ETag","\"2.0.0\"");
+    WebServer.sendHeader("Cache-Control", "max-age=3600, public");
+    WebServer.sendHeader("Vary", "*");
+    WebServer.sendHeader("ETag", "\"2.0.0\"");
 
     if (path.endsWith(".dat"))
       WebServer.sendHeader("Content-Disposition", "attachment;");
@@ -239,7 +281,7 @@ boolean handle_custom(String path) {
 
   // handle commands from a custom page
   String webrequest = WebServer.arg(F("cmd"));
-  if (webrequest.length() > 0 ){
+  if (webrequest.length() > 0 ) {
     ExecuteCommand(webrequest.c_str());
   }
 
@@ -252,11 +294,11 @@ boolean handle_custom(String path) {
     while (dataFile.available())
       page += ((char)dataFile.read());
 
-    reply += parseTemplate(page,0);
+    reply += parseTemplate(page, 0);
     dataFile.close();
   }
   else
-      return false; // unknown file that does not exist...
+    return false; // unknown file that does not exist...
 
   WebServer.send(200, "text/html", reply);
   return true;
@@ -315,8 +357,34 @@ void sortDeviceArray()
     while (innerLoop  >= 1)
     {
       String one = Nodes[sortedIndex[innerLoop]].nodeName;
-      String two = Nodes[sortedIndex[innerLoop-1]].nodeName;
-      if (arrayLessThan(one,two))
+      String two = Nodes[sortedIndex[innerLoop - 1]].nodeName;
+      if (arrayLessThan(one, two))
+      {
+        switchArray(innerLoop);
+      }
+      innerLoop--;
+    }
+  }
+}
+
+
+//********************************************************************************
+// Device Sort routine, actual sorting
+//********************************************************************************
+void sortDeviceArrayGroup()
+{
+  int innerLoop ;
+  int mainLoop ;
+  for ( mainLoop = 1; mainLoop < UNIT_MAX; mainLoop++)
+  {
+    innerLoop = mainLoop;
+    while (innerLoop  >= 1)
+    {
+      String one = Nodes[sortedIndex[innerLoop]].group;
+      if(one.length()==0) one = "_";
+      String two = Nodes[sortedIndex[innerLoop - 1]].group;
+      if(two.length()==0) two = "_";
+      if (arrayLessThan(one, two))
       {
         switchArray(innerLoop);
       }
@@ -393,7 +461,7 @@ void handle_filelist() {
   File file = root.openNextFile();
   while (file)
   {
-    if(!file.isDirectory()){
+    if (!file.isDirectory()) {
       reply += F("<TR><TD>");
       if (file.name() != FILE_BOOT)
       {

@@ -1052,6 +1052,7 @@ byte PluginCall(byte Function, String& cmd, String& params)
   {
     // Unconditional calls to all plugins
     case PLUGIN_INIT:
+    case PLUGIN_UNCONDITIONAL_POLL:
       for (x = 0; x < PLUGIN_MAX; x++)
         if (Plugin_id[x] != 0)
           Plugin_ptr[x](Function, cmd, params);
@@ -1060,6 +1061,7 @@ byte PluginCall(byte Function, String& cmd, String& params)
 
     // Call to all plugins. Return at first match
     case PLUGIN_WRITE:
+    case PLUGIN_SERIAL_IN:
       for (x = 0; x < PLUGIN_MAX; x++)
         if (Plugin_id[x] != 0)
           if (Plugin_ptr[x](Function, cmd, params))

@@ -190,11 +190,14 @@ unsigned long str2int(char *string)
 //********************************************************************************************
 // Maintain node list
 //********************************************************************************************
-void nodelist(IPAddress remoteIP, String msg) {
-
+void nodelist(IPAddress remoteIP, String hostName, String group) {
+ 
   boolean found = false;
+  if(group.length()==0)
+    group = "-";
   for (byte x = 0; x < UNIT_MAX; x++) {
-    if (Nodes[x].nodeName == msg) {
+    if (Nodes[x].nodeName == hostName) {
+      Nodes[x].group = group;
       for (byte y = 0; y < 4; y++)
         Nodes[x].IP[y] = remoteIP[y];
       Nodes[x].age = 0;
@@ -205,7 +208,8 @@ void nodelist(IPAddress remoteIP, String msg) {
   if (!found) {
     for (byte x = 0; x < UNIT_MAX; x++) {
       if (Nodes[x].IP[0] == 0) {
-        Nodes[x].nodeName = msg;
+        Nodes[x].nodeName = hostName;
+        Nodes[x].group = group;
         for (byte y = 0; y < 4; y++)
           Nodes[x].IP[y] = remoteIP[y];
         Nodes[x].age = 0;

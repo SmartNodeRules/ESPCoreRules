@@ -16,9 +16,12 @@
 
 // This is a custom Core edition of ESP Easy, based on R120 and some Mega code
 
+#define BUILD                               3
+
 // Select features to include into the Core:
 #define FEATURE_RULES                    true
 #define FEATURE_PLUGINS                  true
+#define FEATURE_MQTT                     true
 
 
 // Other settings
@@ -45,6 +48,8 @@
 
 #define PLUGIN_INIT                         2
 #define PLUGIN_WRITE                       13
+#define PLUGIN_SERIAL_IN                   16
+#define PLUGIN_UNCONDITIONAL_POLL          25
 
 #if defined(ESP32)
 #define ARDUINO_OTA_PORT  3232
@@ -66,10 +71,11 @@
 #include "SPIFFS.h"
 WebServer WebServer(80);
 #ifdef FEATURE_ARDUINO_OTA
-#include <ArduinoOTA.h>
-#include <ESPmDNS.h>
-bool ArduinoOTAtriggered = false;
+  #include <ArduinoOTA.h>
+  #include <ESPmDNS.h>
+  bool ArduinoOTAtriggered = false;
 #endif
+#define PIN_D_MAX        16
 #endif
 
 #if defined(ESP8266)
@@ -81,11 +87,12 @@ bool ArduinoOTAtriggered = false;
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
-ESP8266HTTPUpdateServer httpUpdater(true);
+ESP8266HTTPUpdateServer httpUpdater(false);
 ESP8266WebServer WebServer(80);
 extern "C" {
 #include "user_interface.h"
 }
+#define PIN_D_MAX        16
 #endif
 
 WiFiServer *ser2netServer;
@@ -97,6 +104,14 @@ byte connectionState = 0;
 using namespace fs;
 WiFiUDP portUDP;
 
+#if FEATURE_MQTT
+  #include <PubSubClient.h>
+  WiFiClient mqtt;
+  PubSubClient MQTTclient(mqtt);
+  unsigned long connectionFailures;
+  #define MSGBUS_TOPIC "BROADCAST/"
+#endif
+
 struct SecurityStruct
 {
   char          WifiSSID[32];
@@ -104,6 +119,8 @@ struct SecurityStruct
   char          WifiSSID2[32];
   char          WifiKey2[64];
   char          WifiAPKey[64];
+  char          ControllerUser[64];
+  char          ControllerPassword[64];
 } SecuritySettings;
 
 struct SettingsStruct
@@ -114,17 +131,25 @@ struct SettingsStruct
   byte          DNS[4];
   unsigned int  Port;
   char          Name[26];
+  char          Group[26];
   char          NTPHost[64];
   int8_t        Pin_i2c_sda;
   int8_t        Pin_i2c_scl;
   unsigned long BaudRate;
   byte          deepSleep;
   boolean       DST;
-  boolean       UseRules;
+  boolean       RulesClock;
+  boolean       RulesSerial;
   boolean       UseSerial;
   boolean       UseNTP;
   int16_t       TimeZone;
   byte          SerialTelnet=0;
+  byte          Controller_IP[4];
+  unsigned int  ControllerPort;
+  char          MQTTsubscribe[80];
+  boolean       MQTTRetainFlag;
+  boolean       UseMSGBusUDP = true;
+  boolean       UseMSGBusMQTT;
 } Settings;
 
 struct NodeStruct
@@ -132,6 +157,7 @@ struct NodeStruct
   byte IP[4];
   byte age;
   String nodeName;
+  String group;
 } Nodes[UNIT_MAX];
 
 struct nvarStruct
@@ -201,7 +227,7 @@ String dummyString = "";
   \*********************************************************************************************/
 void setup()
 {
-  Serial.begin(57600);
+  Serial.begin(115200);
   Serial.println("");
   
   String event = "";
@@ -255,11 +281,13 @@ void setup()
     Nodes[0].IP[x] = IP[x];
   Nodes[0].age = 0;
   Nodes[0].nodeName = Settings.Name;
+  Nodes[0].group = Settings.Group;
 
   ser2netServer = new WiFiServer(23);
   ser2netServer->begin();
 
-  portUDP.begin(Settings.Port);
+  if(Settings.UseMSGBusUDP)
+    portUDP.begin(Settings.Port);
 
   initTime();
 
@@ -272,14 +300,27 @@ void setup()
 #endif
 
   // Get others to announce themselves so i can update my node list
-  event = "MSGBUS/Refresh";
-  UDPSend(event);
+  if(Settings.UseMSGBusUDP){
+    event = F("MSGBUS/Refresh");
+    UDPSend(event);
+  }
 
-#if FEATURE_RULES
-  event = "System#Boot";
-  rulesProcessing(FILE_BOOT, event);
-  rulesProcessing(FILE_RULES, event);
-#endif
+  #if FEATURE_RULES
+    event = F("System#Boot");
+    rulesProcessing(FILE_BOOT, event);
+    rulesProcessing(FILE_RULES, event);
+  #endif
+
+  #if FEATURE_MQTT
+    // Get others to announce themselves so i can update my node list
+    // for MQTT, the connection needs to be made during System#Boot so we do this afterwards
+    if(Settings.UseMSGBusMQTT){ 
+      String topic = F(MSGBUS_TOPIC);
+      topic += F("MSGBUS/Refresh");
+      String payload = "";
+      MQTTclient.publish(topic.c_str(), payload.c_str(),Settings.MQTTRetainFlag);
+    }
+  #endif
 }
 
 
@@ -292,8 +333,17 @@ void loop()
     reboot();
 
   serial();
+
   WebServer.handleClient();
-  MSGBusReceive();
+
+  if(Settings.UseMSGBusUDP)
+    MSGBusReceive();
+    
+  #if FEATURE_MQTT
+  if(Settings.UseMSGBusMQTT) 
+    MQTTclient.loop();
+  #endif
+
   telnet();
 
   if (millis() > timer10ps)
@@ -327,7 +377,9 @@ void loop()
 \*********************************************************************************************/
 void run10PerSecond(){
   timer10ps = millis() + 100;
-  MSGBusQueue();
+  PluginCall(PLUGIN_UNCONDITIONAL_POLL, dummyString, dummyString);
+  if(Settings.UseMSGBusUDP) 
+    MSGBusQueue();
 }
 /********************************************************************************************\
   Each second
@@ -347,6 +399,10 @@ void runEachSecond() {
     timer60 = millis() + 60000;
     uptime++;
     WifiCheck();
+    #if FEATURE_MQTT
+    if(Settings.UseMSGBusMQTT) 
+      MQTTCheck();
+    #endif
     refreshNodeList();
     MSGBusAnnounceMe();
   }
