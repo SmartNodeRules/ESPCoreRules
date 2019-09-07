@@ -2,6 +2,12 @@
 //#################################### Plugin 012: LCD ##################################################
 //#######################################################################################################
 
+/*
+ * Commands:
+ * LCD <row>,<col>,<text>                   Display text on LCD on specified row and column
+ * LCDCMD <On|Off|Clear>                    Turn display background light on/off or clear text
+*/
+
 #include <LiquidCrystal_I2C.h>
 
 LiquidCrystal_I2C *lcd;
@@ -15,7 +21,12 @@ boolean Plugin_012(byte function, String& cmd, String& params)
 
   switch (function)
   {
-
+    case PLUGIN_INFO:
+      {
+        printWebTools += F("<TR><TD><TD>P012 - LCD");
+        break;
+      }
+      
     case PLUGIN_INIT:
       {
         if (!lcd)

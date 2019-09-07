@@ -1,5 +1,22 @@
-#if defined(ESP8266)
+void syslog(String msg){
 
+  String log = "<7>";
+  log += Settings.Name;
+  log += " ";
+  log += msg;
+  
+  IPAddress UDP_IP(255, 255, 255, 255);
+  portUDP.beginPacket(UDP_IP, 514);
+  #if defined(ESP8266)
+    portUDP.write(log.c_str(), log.length());
+  #endif
+  #if defined(ESP32)
+    portUDP.write((uint8_t*)log.c_str(), log.length());
+  #endif
+  portUDP.endPacket();
+}
+
+#if defined(ESP8266)
 struct tcp_pcb;
 extern struct tcp_pcb* tcp_tw_pcbs;
 extern "C" void tcp_abort (struct tcp_pcb* pcb);
@@ -15,6 +32,19 @@ void tcpCleanup()
 }
 #endif
 
+String getSystemLibraryString() {
+  String result;
+  #if defined(ESP32)
+    result += F("ESP32 SDK ");
+    result += ESP.getSdkVersion();
+  #else
+    result += F("ESP82xx Core ");
+    result += ESP.getCoreVersion();
+    result += F(", NONOS SDK ");
+    result += system_get_sdk_version();
+  #endif
+  return result;
+}
 
 void reboot() {
 #if defined(ESP8266)
@@ -32,6 +62,36 @@ String toString(float value, byte decimals)
   sValue.trim();
   return sValue;
 }
+
+
+/********************************************************************************************\
+  Parse string template
+  \*********************************************************************************************/
+String parseTemplate(String &tmpString, byte lineSize)
+{
+  String newString = tmpString;
+
+  // check named uservars
+  for (byte x = 0; x < USER_VAR_MAX; x++) {
+    String varname = "%" + nUserVar[x].Name + "%";
+    String svalue = toString(nUserVar[x].Value, nUserVar[x].Decimals);
+    newString.replace(varname, svalue);
+  }
+
+  // check named uservar strings
+  for (byte x = 0; x < USER_STRING_VAR_MAX; x++) {
+    String varname = "%" + sUserVar[x].Name + "%";
+    String svalue = String(sUserVar[x].Value);
+    newString.replace(varname, svalue);
+  }
+
+  #if FEATURE_TIME
+    newString.replace(F("%systime%"), getTimeString(':'));
+  #endif
+  newString.replace(F("%sysname%"), Settings.Name);
+  return newString;
+}
+
 
 /********************************************************************************************\
   Get numerical Uservar by name
@@ -122,27 +182,6 @@ void setSvar(String varName, String value) {
 
 
 /********************************************************************************************\
-  Set Timer by name
-  \*********************************************************************************************/
-void setTimer(String varName, unsigned int value) {
-
-  int pos = -1;
-  for (byte x = 0; x < RULES_TIMER_MAX; x++) {
-    if (RulesTimer[x].Name == varName) {
-      RulesTimer[x].Value = value;
-      return;
-    }
-    if (pos == -1 && RulesTimer[x].Name.length() == 0)
-      pos = x;
-  }
-  if (pos != -1) {
-    RulesTimer[pos].Name = varName;
-    RulesTimer[pos].Value = value;
-  }
-}
-
-
-/********************************************************************************************\
   Convert a char string to integer
   \*********************************************************************************************/
 unsigned long str2int(char *string)
@@ -151,41 +190,6 @@ unsigned long str2int(char *string)
   return temp;
 }
 
-/********************************************************************************************\
-  Classic Node list update
-  \*********************************************************************************************/
-/*
-  #define NODE_TYPE_ID 1
-  void sendSysInfoUDP(byte repeats)
-  {
-  // send my info to the world...
-  for (byte counter = 0; counter < repeats; counter++)
-  {
-    uint8_t mac[] = {0, 0, 0, 0, 0, 0};
-    uint8_t* macread = WiFi.macAddress(mac);
-    byte data[80];
-    data[0] = 255;
-    data[1] = 1;
-    for (byte x = 0; x < 6; x++)
-      data[x + 2] = macread[x];
-    IPAddress ip = WiFi.localIP();
-    for (byte x = 0; x < 4; x++)
-      data[x + 8] = ip[x];
-    data[12] = Settings.Unit;
-    data[13] = Settings.Build & 0xff;
-    data[14] = Settings.Build >> 8;
-    memcpy((byte*)data + 15, Settings.Name, 25);
-    data[40] = NODE_TYPE_ID;
-
-    IPAddress broadcastIP(255, 255, 255, 255);
-    portUDP.beginPacket(broadcastIP, Settings.UDPPort);
-    portUDP.write(data, 80);
-    portUDP.endPacket();
-    if (counter < (repeats - 1))
-      delay(500);
-  }
-  }
-*/
 
 //********************************************************************************************
 // Maintain node list
@@ -325,6 +329,7 @@ String parseString(String& string, byte indexFind, char separator)
   return "";
 }
 
+
 //*********************************************************************************************
 // Parse a string and get the xth command or parameter
 //*********************************************************************************************
@@ -344,6 +349,7 @@ int getParamStartPos(String& string, byte indexFind)
   }
   return -1;
 }
+
 
 //********************************************************************************************
 // Convert a char string to IP byte array
@@ -380,6 +386,7 @@ boolean str2ip(char *string, byte * IP)
     return true;
   return false;
 }
+
 
 #ifdef FEATURE_ARDUINO_OTA
 /********************************************************************************************\

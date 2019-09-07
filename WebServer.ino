@@ -10,9 +10,9 @@ void WebServerInit()
   WebServer.on("/upload", HTTP_GET, handle_upload);
   WebServer.on("/upload", HTTP_POST, handle_upload_post, handleFileUpload);
   WebServer.onNotFound(handleNotFound);
-#if defined(ESP8266)
-  httpUpdater.setup(&WebServer);
-#endif
+  #if defined(ESP8266)
+    httpUpdater.setup(&WebServer);
+  #endif
 
   WebServer.begin();
 }
@@ -68,10 +68,12 @@ void handle_root() {
     if (sCommand.length() > 0)
       ExecuteCommand(sCommand.c_str());
 
-    String event = F("Web#Print");
-    rulesProcessing(FILE_RULES, event);
-
-    reply += printWebString;
+    #if FEATURE_RULES
+      String event = F("Web#Print");
+      rulesProcessing(FILE_RULES, event);
+      reply += printWebString;
+    #endif
+    
     reply += F("<form><table>");
 
     // first get the list in alphabetic order
@@ -163,34 +165,77 @@ void handle_tools() {
   String reply = "";
   addHeader(true, reply);
 
-  reply += F("<form><table><TH>Tools<TH>");
+  reply += F("<form><table>");
+
+  reply += F("<TR><TD>Command<TD>");
+  reply += F("<input type='text' name='cmd' value='");
+  reply += webrequest;
+  reply += F("'><TR><TD><TD><input class=\"button-widelink\" type='submit' value='Submit'>");
+  if (webrequest.length() > 0)
+    ExecuteCommand(webrequest.c_str());
+  
   reply += F("<TR><TD>File System<TD><a class=\"button-widelink\" href=\"/filelist\">Files</a>");
-#if defined(ESP8266)
-  reply += F("<TR><TD>Update Firmware<TD><a class=\"button-widelink\" href=\"/update\">Firmware</a>");
-#endif
+  #if defined(ESP8266)
+    reply += F("<TR><TD>Update Firmware<TD><a class=\"button-widelink\" href=\"/update\">Firmware</a>");
+  #endif
   reply += F("<TR><TD>Reboot System<TD><a class=\"button-widelink\" href=\"/?cmd=reboot\">Reboot</a>");
 
-#if defined(ESP8266)
-  reply += F("<TR><TR><TD>FlashSize:<TD>");
-  reply += ESP.getFlashChipRealSize() / 1024;
-  reply += F(" kB");
+  reply += F("<TR><TR><TD>RSSI:<TD>");
+  reply += WiFi.RSSI();
+  reply += F(" dB");
+      
+  #if defined(ESP8266)
+    reply += F("<TR><TD>FlashSize:<TD>");
+    reply += ESP.getFlashChipRealSize() / 1024;
+    reply += F(" kB");
 
-  reply += F(" (Free:");
-  reply += ESP.getFreeSketchSpace() / 1024;
-  reply += F(" kB)");
-#endif
+    reply += F(" (Free:");
+    reply += ESP.getFreeSketchSpace() / 1024;
+    reply += F(" kB)");
+  #endif
+
+  reply += F("<TR><TD>Core:<TD>");
+  String core = getSystemLibraryString();
+  core.replace(",","<BR>");
+  reply += core;
 
   reply += F("<TR><TD>Free RAM:<TD>");
   reply += ESP.getFreeHeap();
 
-  reply += F("<TR><TD>System Time:<TD>");
-  reply += getTimeString(':');
+  #if FEATURE_TIME
+    reply += F("<TR><TD>System Time:<TD>");
+    reply += getTimeString(':');
+  #endif
 
   reply += F("<TR><TD>Uptime:<TD>");
   reply += uptime;
 
   reply += F("<TR><TD>Build:<TD>");
   reply += BUILD;
+
+  reply += F("<TR><TD>LoopCount:<TD>");
+  reply += loopCounterLast/60;
+
+  reply += F("<TR><TD>Features:<TD>");
+  #if FEATURE_RULES
+    reply += F("<TR><TD><TD>Rules");
+  #endif
+  #if FEATURE_MSGBUS
+    reply += F("<TR><TD><TD>MSGBus");
+  #endif
+  #if FEATURE_TIME
+    reply += F("<TR><TD><TD>Time");
+  #endif
+  #if FEATURE_MQTT
+    reply += F("<TR><TD><TD>MQTT");
+  #endif
+  #if FEATURE_PLUGINS
+    reply += F("<TR><TD>Plugins:");
+    printWebTools = "";
+    PluginCall(PLUGIN_INFO, dummyString,  dummyString);
+    reply += printWebTools;
+    printWebTools = "";
+  #endif
 
   reply += F("</table></form>");
   WebServer.send(200, "text/html", reply);
@@ -203,9 +248,9 @@ void handle_tools() {
 void handleNotFound() {
 
   if (loadFromFS(true, WebServer.uri())) return;
-#ifdef FEATURE_SD
-  if (loadFromFS(false, WebServer.uri())) return;
-#endif
+  #ifdef FEATURE_SD
+    if (loadFromFS(false, WebServer.uri())) return;
+  #endif
   String message = F("URI: ");
   message += WebServer.uri();
   message += "\nMethod: ";
@@ -258,7 +303,7 @@ bool loadFromFS(boolean spiffs, String path) {
   }
   else
   {
-#ifdef FEATURE_SD
+  #ifdef FEATURE_SD
     File dataFile = SD.open(path.c_str());
     if (!dataFile)
       return false;
@@ -266,7 +311,7 @@ bool loadFromFS(boolean spiffs, String path) {
       WebServer.sendHeader("Content-Disposition", "attachment;");
     WebServer.streamFile(dataFile, dataType);
     dataFile.close();
-#endif
+  #endif
   }
   return true;
 }
@@ -399,9 +444,7 @@ void sortDeviceArrayGroup()
 //********************************************************************************
 void handle_filelist() {
 
-#if defined(ESP8266)
-
-  String fdelete = WebServer.arg("delete");
+  String fdelete = WebServer.arg(F("delete"));
 
   if (fdelete.length() > 0)
   {
@@ -410,8 +453,9 @@ void handle_filelist() {
 
   String reply = "";
   addHeader(true, reply);
-  reply += F("<table><TH><TH>Filename:<TH>Size");
+  reply += F("<table border=1px frame='box' rules='all'><TH><TH>Filename:<TH>Size<TH>");
 
+#if defined(ESP8266)
   Dir dir = SPIFFS.openDir("");
   while (dir.next())
   {
@@ -419,9 +463,6 @@ void handle_filelist() {
     reply += F("<a class=\"button-link\" href=\"edit?file=");
     reply += dir.fileName();
     reply += F("\">Edit</a>");
-
-
-
     reply += F("<TD><a href=\"");
     reply += dir.fileName();
     reply += F("\">");
@@ -437,39 +478,19 @@ void handle_filelist() {
       reply += dir.fileName();
       reply += F("\">Del</a>");
     }
-
   }
-  reply += F("<TR><TD><a class=\"button-link\" href=\"/upload\">Upload</a>");
-
-  reply += F("</table></form>");
-  WebServer.send(200, "text/html", reply);
 #endif
 
 #if defined(ESP32)
-  String fdelete = WebServer.arg(F("delete"));
-
-  if (fdelete.length() > 0)
-  {
-    SPIFFS.remove(fdelete);
-  }
-
-  String reply = "";
-  addHeader(true, reply);
-  reply += F("<table border=1px frame='box' rules='all'><TH><TH>Filename:<TH>Size");
-
   File root = SPIFFS.open("/");
   File file = root.openNextFile();
   while (file)
   {
     if (!file.isDirectory()) {
       reply += F("<TR><TD>");
-      if (file.name() != FILE_BOOT)
-      {
-        reply += F("<a class='button link' href=\"filelist?delete=");
-        reply += file.name();
-        reply += F("\">Del</a>");
-      }
-
+      reply += F("<a class=\"button-link\" href=\"edit?file=");
+      reply += file.name();
+      reply += F("\">Edit</a>");
       reply += F("<TD><a href=\"");
       reply += file.name();
       reply += F("\">");
@@ -477,13 +498,21 @@ void handle_filelist() {
       reply += F("</a>");
       reply += F("<TD>");
       reply += file.size();
+      reply += F("<TD>");
+      if (file.name() != FILE_BOOT)
+      {
+        reply += F("<a class='button link' href=\"filelist?delete=");
+        reply += file.name();
+        reply += F("\">Del</a>");
+      }
       file = root.openNextFile();
     }
   }
+#endif
+
   reply += F("</table></form>");
   reply += F("<BR><a class='button link' href=\"/upload\">Upload</a>");
   WebServer.send(200, "text/html", reply);
-#endif
 }
 
 
@@ -600,7 +629,7 @@ void handle_edit() {
   String fileName = WebServer.arg(F("file"));
   String content = WebServer.arg(F("content"));
 
-  if (WebServer.args() == 2) {
+  if (WebServer.args() >= 2) {
     if (content.length() > RULES_MAX_SIZE)
       reply += F("<span style=\"color:red\">Data was not saved, exceeds web editor limit!</span>");
     else

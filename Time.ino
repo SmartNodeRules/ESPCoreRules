@@ -1,4 +1,4 @@
-//#if FEATURE_TIME
+#if FEATURE_TIME
 
 #define SECS_PER_MIN  (60UL)
 #define SECS_PER_HOUR (3600UL)
@@ -25,6 +25,20 @@ uint32_t prevMillis = 0;
 uint32_t nextSyncTime = 0;
 
 byte PrevMinutes = 0;
+
+String getTimeString(char delimiter)
+{
+  String reply;
+  if (hour() < 10)
+    reply += F("0");
+  reply += String(hour());
+  if (delimiter != '\0')
+    reply += delimiter;
+  if (minute() < 10)
+    reply += F("0");
+  reply += minute();
+  return reply;
+}
 
 void breakTime(unsigned long timeInput, struct timeStruct &tm) {
   uint8_t year;
@@ -148,7 +162,9 @@ void checkTime()
       if (minute() < 10)
         event += "0";
       event += minute();
-      rulesProcessing(FILE_RULES, event);
+      #if FEATURE_RULES
+        rulesProcessing(FILE_RULES, event);
+      #endif
     }
   }
 }
@@ -224,11 +240,7 @@ unsigned long getNtpTime()
 
     IPAddress timeServerIP;
     const char* ntpServerName = "pool.ntp.org";
-
-    //if (Settings.NTPHost[0] != 0)
-    //  WiFi.hostByName(Settings.NTPHost, timeServerIP);
-    //else
-      WiFi.hostByName(ntpServerName, timeServerIP);
+    WiFi.hostByName(ntpServerName, timeServerIP);
 
     while (udp.parsePacket() > 0) ; // discard any previously received packets
 
@@ -262,5 +274,5 @@ unsigned long getNtpTime()
   }
   return 0;
 }
-//#endif
+#endif
 

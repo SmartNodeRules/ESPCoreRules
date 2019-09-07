@@ -2,6 +2,11 @@
 //#################################### Plugin 004: TempSensor Dallas DS18B20  ###########################
 //#######################################################################################################
 
+/*
+ * Commands:
+ * Dallas <variable>,<pin>                   Read temperature value into variable
+*/
+
 #define PLUGIN_004
 #define PLUGIN_ID_004         4
 
@@ -13,7 +18,12 @@ boolean Plugin_004(byte function, String& cmd, String& params)
 
   switch (function)
   {
-
+    case PLUGIN_INFO:
+      {
+        printWebTools += F("<TR><TD><TD>P004 - Dallas");
+        break;
+      }
+      
     case PLUGIN_WRITE:
       {
         if (cmd.equalsIgnoreCase(F("Dallas")))

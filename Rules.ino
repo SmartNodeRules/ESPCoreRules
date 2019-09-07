@@ -1,12 +1,36 @@
 #if FEATURE_RULES
+/********************************************************************************************\
+  Set Timer by name
+  \*********************************************************************************************/
+void setTimer(String varName, unsigned int value) {
+
+  int pos = -1;
+  for (byte x = 0; x < RULES_TIMER_MAX; x++) {
+    if (RulesTimer[x].Name == varName) {
+      RulesTimer[x].Value = value;
+      return;
+    }
+    if (pos == -1 && RulesTimer[x].Name.length() == 0)
+      pos = x;
+  }
+  if (pos != -1) {
+    RulesTimer[pos].Name = varName;
+    RulesTimer[pos].Value = value;
+  }
+}
+
+
 //********************************************************************************************
 //Rules processing
 //********************************************************************************************
 String rulesProcessing(String fileName, String& event)
 {
-  String log = F("EVT: ");
-  log += event;
-  telnetLog(log);
+  String log = "";
+  if(Settings.LogEvents){
+    log = F("EVT: ");
+    log += event;
+    telnetLog(log);
+  }
 
   fs::File f = SPIFFS.open(fileName, "r+");
 
@@ -141,9 +165,15 @@ String rulesProcessing(String fileName, String& event)
                 action.replace(F("%eventvalue%"), tmpString); // substitute %eventvalue% in actions with the actual value from the event
               }
 
-              String log = F("ACT: ");
-              log += action;
-              telnetLog(log);
+              if(Settings.LogEvents){
+                log = F("ACT: ");
+                log += action;
+                telnetLog(log);
+              }
+              #if SERIALDEBUG
+                Serial.print("ACT: ");
+                Serial.println(action);
+              #endif
 
               delay(0);
               ExecuteCommand(action.c_str());
@@ -388,13 +418,8 @@ boolean conditionMatch(const String& check)
   {
     String tmpCheck1 = check.substring(0, posStart);
     String tmpCheck2 = check.substring(posEnd);
-    // todo if (!isFloat(tmpCheck1) || !isFloat(tmpCheck2)) {
-    //    Value1 = timeStringToSeconds(tmpCheck1);
-    //    Value2 = timeStringToSeconds(tmpCheck2);
-    //} else {
     Value1 = tmpCheck1.toFloat();
     Value2 = tmpCheck2.toFloat();
-    //}
   }
   else
     return false;
@@ -434,50 +459,6 @@ boolean conditionMatch(const String& check)
   return match;
 }
 
-/********************************************************************************************\
-  Parse string template
-  \*********************************************************************************************/
-String parseTemplate(String &tmpString, byte lineSize)
-{
-  String newString = tmpString;
-
-  // check named uservars
-  for (byte x = 0; x < USER_VAR_MAX; x++) {
-    String varname = "%" + nUserVar[x].Name + "%";
-    String svalue = toString(nUserVar[x].Value, nUserVar[x].Decimals);
-    newString.replace(varname, svalue);
-  }
-
-  // check named uservar strings
-  for (byte x = 0; x < USER_STRING_VAR_MAX; x++) {
-    String varname = "%" + sUserVar[x].Name + "%";
-    String svalue = String(sUserVar[x].Value);
-    newString.replace(varname, svalue);
-  }
-
-  newString.replace(F("%systime%"), getTimeString(':'));
-  newString.replace(F("%sysname%"), Settings.Name);
-  return newString;
-}
-
-String getTimeString(char delimiter)
-{
-  String reply;
-  if (hour() < 10)
-    reply += F("0");
-  reply += String(hour());
-  if (delimiter != '\0')
-    reply += delimiter;
-  if (minute() < 10)
-    reply += F("0");
-  reply += minute();
-  //if (delimiter != '\0')
-  //  reply += delimiter;
-  //if (second() < 10)
-  //  reply += F("0");
-  //reply += second();
-  return reply;
-}
 
 /********************************************************************************************\
   Check rule timers

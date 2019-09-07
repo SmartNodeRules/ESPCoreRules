@@ -1,3 +1,4 @@
+#if FEATURE_MSGBUS
 //********************************************************************************************
 // UDP receive message bus packets
 //********************************************************************************************
@@ -36,7 +37,9 @@ void MSGBusReceive() {
           break;
         }
       }
-      telnetLog(String("UDP: ") + msg);
+
+      if(Settings.LogEvents)
+        telnetLog(String("UDP: ") + msg);
       return; // This message needs no further processing, so return.
     }
 
@@ -59,7 +62,8 @@ void MSGBusReceive() {
       rulesProcessing(FILE_RULES, msg);
     #endif
 
-    telnetLog(String("UDP: ") + msg);
+    if(Settings.LogEvents)
+      telnetLog(String("UDP: ") + msg);
   }
 }
 
@@ -248,4 +252,6 @@ void MQTTCheck()
       connectionFailures--;
 }
 #endif
+
+#endif // MSGBUS
 

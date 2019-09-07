@@ -22,8 +22,6 @@ void serial()
     if (SerialInByte == '\n')
     {
       InputBuffer_Serial[SerialInByteCounter] = 0; // serial data completed
-      //Serial.write('>');
-      //Serial.println(InputBuffer_Serial);
       if(Settings.SerialTelnet && ser2netClient.connected())
       {
         ser2netClient.write((const uint8_t*)InputBuffer_Serial, strlen(InputBuffer_Serial));
@@ -34,18 +32,22 @@ void serial()
 
       String action = InputBuffer_Serial;
 
-      if (Settings.RulesSerial){
-        String event = "";
-        if(action.substring(0,3) == F("20;")){
-          action = action.substring(6); // RFLink, strip "20;xx;" from incoming message
-          event = "RFLink#" + action;
+      #if FEATURE_RULES
+        if (Settings.RulesSerial){
+          String event = "";
+          if(action.substring(0,3) == F("20;")){
+            action = action.substring(6); // RFLink, strip "20;xx;" from incoming message
+            event = "RFLink#" + action;
+          }
+          else
+            event = "Serial#" + action;
+          rulesProcessing(FILE_RULES, event);
         }
-        else
-          event = "Serial#" + action;
-        rulesProcessing(FILE_RULES, event);
-      }
+      #endif
 
-      PluginCall(PLUGIN_SERIAL_IN, action, dummyString);
+      #if FEATURE_PLUGINS
+        PluginCall(PLUGIN_SERIAL_IN, action, dummyString);
+      #endif
       ExecuteCommand(InputBuffer_Serial);
       SerialInByteCounter = 0;
       InputBuffer_Serial[0] = 0; // serial data processed, clear buffer

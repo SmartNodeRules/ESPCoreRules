@@ -2,6 +2,15 @@
 //#################################### Plugin 001: Input Switch #########################################
 //#######################################################################################################
 
+/*
+ * Commands:
+ * gpio <pin>,<value>               Set gpio output
+ * gpioRead <variable>,<pin>        Turn into input and read value
+ * gpioDebug <pin>                  Show pinstate every second on serial
+ * gpioState <variable>,<pin>       Read pin state without changing to input/ouput
+ * gpioMonitor <pin>		            Monitor pin and create an event on change
+*/
+
 #define PLUGIN_001
 #define PLUGIN_ID_001         1
 
@@ -11,9 +20,17 @@ boolean Plugin_001(byte function, String& cmd, String& params)
 
   static int8_t PinMonitor[PIN_D_MAX];
   static int8_t PinMonitorState[PIN_D_MAX];
+  static int8_t PinDebugStart = -1;
+  static int8_t PinDebugEnd = -1;
 
   switch (function)
   {
+    case PLUGIN_INFO:
+      {
+        printWebTools += F("<TR><TD><TD>P001 - Switch");
+        break;
+      }
+      
     case PLUGIN_WRITE:
       {
         if (cmd.equalsIgnoreCase(F("gpio")))
@@ -38,6 +55,13 @@ boolean Plugin_001(byte function, String& cmd, String& params)
           setNvar(varName, state);
         }
 
+        if (cmd.equalsIgnoreCase(F("gpioDebug")))
+        {
+          success = true;
+          PinDebugStart = parseString(params,1).toInt();
+          PinDebugEnd = parseString(params,2).toInt();
+        }
+
         if (cmd.equalsIgnoreCase(F("gpioState")))
         {
           success = true;
@@ -47,33 +71,46 @@ boolean Plugin_001(byte function, String& cmd, String& params)
           setNvar(varName, state);
         }
         
-        if (cmd.equalsIgnoreCase(F("monitor")))
+        if (cmd.equalsIgnoreCase(F("gpioMonitor")))
         {
           String param1 = parseString(params, 1);
-          if (param1.equalsIgnoreCase(F("gpio")))
-          {
-            byte pin = parseString(params,2).toInt();
-            pinMode(pin,INPUT_PULLUP);
-            PinMonitor[pin] = 1;
-            success = true;
-          }
+          byte pin = parseString(params,1).toInt();
+          pinMode(pin,INPUT_PULLUP);
+          PinMonitor[pin] = 1;
+          success = true;
         }
-        
         break;
       }
       
-    case PLUGIN_UNCONDITIONAL_POLL:
+    case PLUGIN_ONCE_A_SECOND:
+      {
+        if (PinDebugStart != -1){
+          String debug = "";
+          for(byte pin = PinDebugStart; pin <= PinDebugEnd; pin++){
+            debug += (String)pin;
+            debug += ":";
+            debug += (String)digitalRead(pin);
+            debug += " ";
+          }
+          telnetLog(debug);
+        }
+        break;
+      }
+      
+    case PLUGIN_TEN_PER_SECOND:
       {
         // port monitoring, on request by rule command
         for (byte x=0; x < PIN_D_MAX; x++)
            if (PinMonitor[x] != 0){
              byte state = digitalRead(x);
              if (PinMonitorState[x] != state){
-               String eventString = F("GPIO#");
-               eventString += x;
-               eventString += F("=");
-               eventString += state;
-               rulesProcessing(FILE_RULES, eventString);
+               #if FEATURE_RULES
+                 String eventString = F("GPIO#");
+                 eventString += x;
+                 eventString += F("=");
+                 eventString += state;
+                 rulesProcessing(FILE_RULES, eventString);
+               #endif
                PinMonitorState[x] = state;
              }
            }
