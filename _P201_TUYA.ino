@@ -84,14 +84,20 @@ byte P201_tuyaSend(byte cmd, byte len, byte value)
   byte statusCount = 0;
   byte event = 255;
 
+  // Status messages from door sensor:
+  // 55 aa 0 5 0 5 1 1 0 1 1 d  door closed
+  // 55 aa 0 5 0 5 1 1 0 1 0 c  door open
+  // 55 aa 0 5 0 5 3 4 0 1 2 13 additional message when batteries inserted
+  // 55 aa 0 5 0 5 3 4 0 1 0 11 additional message when batteries inserted
+
   // process reply
   while (Serial.available()){
     count++;
     byte data = Serial.read();
 
-    if(count == 4) // byte 4 contains messega type
+    if(count == 4) // byte 4 contains message type
       msgType = data;
-    if(count == 6) // byte 6 contains data lenght
+    if(count == 6) // byte 6 contains data length
       length = data;
     if(msgType == 5){ // msg type 5 is a status message
       if (count == 7){ // byte 7 contains status indicator
@@ -113,8 +119,17 @@ byte P201_tuyaSend(byte cmd, byte len, byte value)
       reply += " ";
     }
 
-    // Check is message is complete, based on msg length (header + checkcum = 7 bytes)
+    // Check if message is complete, based on msg length (header + checksum = 7 bytes)
     if(count == length + 7){
+
+      #if FEATURE_RULES
+        if(msgType == 5 && status == 1){ // msg type 5 is a status message, status 1 indicates the open/close state
+          String eventString = F("TUYA#Event=");
+          eventString += event;
+          rulesProcessing(FILE_RULES, eventString);
+        }
+      #endif
+               
       // add to logging string
       if(status != 0){
         reply += " status:";
