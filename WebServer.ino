@@ -151,6 +151,7 @@ void handle_root() {
       cmd_within_mainloop = CMD_REBOOT;
     }
     WebServer.send(200, "text/html", "OK");
+    delay(100);
   }
 }
 
@@ -229,6 +230,13 @@ void handle_tools() {
   #if FEATURE_MQTT
     reply += F("<TR><TD><TD>MQTT");
   #endif
+  #if FEATURE_I2C
+    reply += F("<TR><TD><TD>I2C");
+  #endif
+  #if FEATURE_ESPNOW
+    reply += F("<TR><TD><TD>ESPNOW");
+  #endif
+ 
   #if FEATURE_PLUGINS
     reply += F("<TR><TD>Plugins:");
     printWebTools = "";
@@ -536,15 +544,8 @@ void handle_upload_post() {
 
   String reply = "";
   if (uploadResult == 1)
-  {
-    reply += F("Upload OK!<BR>You may need to reboot to apply all settings...");
-    LoadSettings();
-  }
-
+    reply += F("Upload OK");
   if (uploadResult == 2)
-    reply += F("<font color=\"red\">Upload file invalid!</font>");
-
-  if (uploadResult == 3)
     reply += F("<font color=\"red\">No filename!</font>");
 
   addHeader(true, reply);
@@ -564,7 +565,7 @@ void handleFileUpload() {
 
   if (upload.filename.c_str()[0] == 0)
   {
-    uploadResult = 3;
+    uploadResult = 2;
     return;
   }
 
@@ -578,31 +579,12 @@ void handleFileUpload() {
     // first data block, if this is the config file, check PID/Version
     if (upload.totalSize == 0)
     {
-      if (strcasecmp(upload.filename.c_str(), "config.txt") == 0)
-      {
-        struct TempStruct {
-          unsigned long PID;
-          int Version;
-        } Temp;
-        for (int x = 0; x < sizeof(struct TempStruct); x++)
-        {
-          byte b = upload.buf[x];
-          memcpy((byte*)&Temp + x, &b, 1);
-        }
-        if (Temp.Version == VERSION && Temp.PID == ESP_PROJECT_PID)
-          valid = true;
-      }
-      else
-      {
-        // other files are always valid...
-        valid = true;
-      }
-      if (valid)
-      {
-        // once we're safe, remove file and create empty one...
-        SPIFFS.remove((char *)upload.filename.c_str());
-        uploadFile = SPIFFS.open(upload.filename.c_str(), "w");
-      }
+      String filename = upload.filename;
+      #if defined(ESP32)
+        filename = "/" + filename;
+      #endif
+      SPIFFS.remove((char *)filename.c_str());
+      uploadFile = SPIFFS.open(filename.c_str(), "w");
     }
     if (uploadFile) uploadFile.write(upload.buf, upload.currentSize);
   }
@@ -611,10 +593,7 @@ void handleFileUpload() {
     if (uploadFile) uploadFile.close();
   }
 
-  if (valid)
-    uploadResult = 1;
-  else
-    uploadResult = 2;
+  uploadResult = 1;
 }
 
 
@@ -639,7 +618,7 @@ void handle_edit() {
       {
         f.print(content);
         f.close();
-        telnetLog(F("DBG: Flash Save"));
+        logger->println(F("DBG: Flash Save"));
       }
     }
   }

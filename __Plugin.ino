@@ -5,6 +5,10 @@
 //********************************************************************************
 void PluginInit(void)
 {
+  #if SERIALDEBUG
+    Serial.println("Init Plugins");
+  #endif
+
   byte x;
 
   // Clear pointer table for all plugins

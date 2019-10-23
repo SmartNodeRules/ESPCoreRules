@@ -11,6 +11,7 @@
  * gpioMonitor <pin>		            Monitor pin and create an event on change
 */
 
+#ifdef USES_P001
 #define PLUGIN_001
 #define PLUGIN_ID_001         1
 
@@ -92,7 +93,7 @@ boolean Plugin_001(byte function, String& cmd, String& params)
             debug += (String)digitalRead(pin);
             debug += " ";
           }
-          telnetLog(debug);
+          logger->println(debug);
         }
         break;
       }
@@ -120,3 +121,5 @@ boolean Plugin_001(byte function, String& cmd, String& params)
   }
   return success;
 }
+#endif
+

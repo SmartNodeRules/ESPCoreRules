@@ -8,6 +8,7 @@
  * NanoProg                                      Start OTA programming mode (run an AVRDUDE session within 10 seconds)
 */
 
+#ifdef USES_P200
 #define PLUGIN_200
 #define PLUGIN_ID_200         200
 
@@ -305,16 +306,16 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
 
   String log = "";
 
-  telnetLog(F("Start programming mode"));
+  logger->println(F("Start programming mode"));
   log = F(" proxyInit:");
   log += proxyInit;
-  telnetLog(log);
+  logger->println(log);
   log = F(" TXdelay:");
   log += TXdelay;
-  telnetLog(log);
+  logger->println(log);
   log = F(" RXwait:");
   log += RXwait;
-  telnetLog(log);
+  logger->println(log);
 
   Serial.begin(115200);
   unsigned long end = millis() + 10000;
@@ -336,7 +337,7 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
       start = millis();
       if (progClient) progClient.stop();
       progClient = progServer.available();
-      telnetLog(F("Client connected"));
+      logger->println(F("Client connected"));
       delay(0);
       if(proxyInit){ // we do the init message instead of waiting for ARVdude to do it
         Serial.write(0x30);
@@ -365,7 +366,7 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
         log = log.substring(0, 40);
         log += " c=";
         log += count;
-        telnetLog(log);
+        logger->println(log);
 
         // wait max 100 ms for optiboot to reply
         unsigned long tr = micros();
@@ -377,7 +378,7 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
 
         duration = micros() - tr;
         if (!Serial.available()) {
-          telnetLog(F("No reply"));
+          logger->println(F("No reply"));
         }
 
         if (Serial.available()) {
@@ -412,7 +413,7 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
           }
           delay(0);
           progClient.flush();
-          telnetLog(log);
+          logger->println(log);
         }
       }
       delay(0);
@@ -422,6 +423,7 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
   if (progClient) progClient.stop();
   delay(0);
   Serial.begin(Settings.BaudRate);
-  telnetLog(F("End programming mode"));
+  logger->println(F("End programming mode"));
 }
+#endif
 

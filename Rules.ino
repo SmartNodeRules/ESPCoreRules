@@ -1,7 +1,12 @@
+//********************************************************************************************
+// Rules Engine
+//********************************************************************************************
+
 #if FEATURE_RULES
-/********************************************************************************************\
-  Set Timer by name
-  \*********************************************************************************************/
+
+//********************************************************************************************
+// Set Timer by name
+//********************************************************************************************
 void setTimer(String varName, unsigned int value) {
 
   int pos = -1;
@@ -26,10 +31,10 @@ void setTimer(String varName, unsigned int value) {
 String rulesProcessing(String fileName, String& event)
 {
   String log = "";
+  log = F("EVT: ");
+  log += event;
   if(Settings.LogEvents){
-    log = F("EVT: ");
-    log += event;
-    telnetLog(log);
+    logger->println(log);
   }
 
   fs::File f = SPIFFS.open(fileName, "r+");
@@ -138,6 +143,12 @@ String rulesProcessing(String fileName, String& event)
             {
               conditional = true;
               String check = lcAction.substring(split + 3);
+              int equalsPos = event.indexOf("=");
+              if (equalsPos > 0)
+              {
+                String tmpString = event.substring(equalsPos + 1);
+                check.replace("%eventvalue%", tmpString); // substitute %eventvalue% in condition with the actual value from the event
+              }
               condition = conditionMatchExtended(check);
               ifBranche = true;
               isCommand = false;
@@ -168,12 +179,8 @@ String rulesProcessing(String fileName, String& event)
               if(Settings.LogEvents){
                 log = F("ACT: ");
                 log += action;
-                telnetLog(log);
+                logger->println(log);
               }
-              #if SERIALDEBUG
-                Serial.print("ACT: ");
-                Serial.println(action);
-              #endif
 
               delay(0);
               ExecuteCommand(action.c_str());
@@ -192,9 +199,9 @@ String rulesProcessing(String fileName, String& event)
 }
 
 
-/********************************************************************************************\
-  Check if an event matches to a given rule
-  \*********************************************************************************************/
+//********************************************************************************************
+// Check if an event matches to a given rule
+//********************************************************************************************
 boolean ruleMatch(String& event, String& rule)
 {
   boolean match = false;
@@ -299,9 +306,11 @@ boolean ruleMatch(String& event, String& rule)
   }
   return match;
 }
-/********************************************************************************************\
-   Match clock event
- \*********************************************************************************************/
+
+
+//********************************************************************************************
+// Match clock event
+//********************************************************************************************
 boolean matchClockEvent(unsigned long clockEvent, unsigned long clockSet)
 {
   unsigned long Mask;
@@ -336,10 +345,10 @@ boolean matchClockEvent(unsigned long clockEvent, unsigned long clockSet)
   return false;
 }
 
-/********************************************************************************************\
-  Check expression
-  \*********************************************************************************************/
 
+//********************************************************************************************
+// Check expression
+//********************************************************************************************
 boolean conditionMatchExtended(String& check) {
   int condAnd = -1;
   int condOr = -1;
@@ -460,9 +469,9 @@ boolean conditionMatch(const String& check)
 }
 
 
-/********************************************************************************************\
-  Check rule timers
-  \*********************************************************************************************/
+//********************************************************************************************
+// Check rule timers
+//********************************************************************************************
 void rulesTimers()
 {
   for (byte x = 0; x < RULES_TIMER_MAX; x++)
@@ -520,16 +529,20 @@ long timePassedSince(unsigned long timestamp) {
   return timeDiff(timestamp, millis());
 }
 
+
+//********************************************************************************************
 // Check if a certain timeout has been reached.
+//********************************************************************************************
 boolean timeOutReached(unsigned long timer)
 {
   const long passed = timePassedSince(timer);
   return passed >= 0;
 }
 
-/********************************************************************************************\
-  Calculate function for simple expressions
-  \*********************************************************************************************/
+
+//********************************************************************************************
+// Calculate function for simple expressions
+//********************************************************************************************
 #define CALCULATE_OK                            0
 #define CALCULATE_ERROR_STACK_OVERFLOW          1
 #define CALCULATE_ERROR_BAD_OPERATOR            2

@@ -1,3 +1,25 @@
+//********************************************************************************************
+// Init Serial port
+//********************************************************************************************
+void serialInit(){
+  
+  // If boot.txt does not contain a SSID, make sure we have serial on to get started
+  if(SecuritySettings.WifiSSID[0] == 0){
+    Serial.begin(115200);
+    Serial.println(F("No Wifi Config!"));
+  }
+
+  // If we have a valid boot config and serial is explicitly disabled, turn pins to input
+  if (bootConfig && !Settings.UseSerial) {
+    pinMode(1, INPUT);
+    pinMode(3, INPUT);
+  }
+  
+  #if SERIALDEBUG
+    Serial.println("");
+    Serial.println("Serial init");
+  #endif  
+}
 /********************************************************************************************\
  Get data from Serial Interface
 \*********************************************************************************************/

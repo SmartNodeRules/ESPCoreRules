@@ -1,3 +1,7 @@
+//*********************************************************************************************
+// Execute commands
+//*********************************************************************************************
+
 #define INPUT_COMMAND_SIZE          80
 void ExecuteCommand(const char *Line)
 {
@@ -11,7 +15,7 @@ void ExecuteCommand(const char *Line)
       cmd = cmd.substring(0, parampos - 1);
     }
     if (PluginCall(PLUGIN_WRITE, cmd, params)) {
-      telnetLog("OK");
+      logger->println("OK");
       return;
     }
   #endif
@@ -24,13 +28,20 @@ void ExecuteCommand(const char *Line)
   int Par1 = 0;
   int Par2 = 0;
   int Par3 = 0;
+  int Par4 = 0;
 
   GetArgv(Line, Command, 1);
   if (GetArgv(Line, TmpStr1, 2)) Par1 = str2int(TmpStr1);
   if (GetArgv(Line, TmpStr1, 3)) Par2 = str2int(TmpStr1);
   if (GetArgv(Line, TmpStr1, 4)) Par3 = str2int(TmpStr1);
+  if (GetArgv(Line, TmpStr1, 5)) Par4 = str2int(TmpStr1);
 
-  // Debug commands:
+
+  //********************************************************************************
+  // Some Debug commands, unofficial stuff goes here
+  //********************************************************************************
+
+  #if FEATURE_DEBUG_CMD
   if (strcasecmp_P(Command, PSTR("WifiOff")) == 0)
   {
     success = true;
@@ -48,7 +59,7 @@ void ExecuteCommand(const char *Line)
       ESP.reset();
     #endif
   }
-  if (strcasecmp_P(Command, PSTR("WifiConnect")) == 0)
+  if (strcasecmp_P(Command, PSTR("WifiConnectPersistent")) == 0)
   {
     success = true;
     String strLine = Line;
@@ -81,8 +92,11 @@ void ExecuteCommand(const char *Line)
       debugLevel = Par1;
     }
   #endif
-  
+  #endif
+    
+  //********************************************************************************
   // Config commands
+  //********************************************************************************
 
   if (strcasecmp_P(Command, PSTR("Config")) == 0)
   {
@@ -94,6 +108,10 @@ void ExecuteCommand(const char *Line)
     String strP3 = parseString(strLine, 5);
     String strP4 = parseString(strLine, 6);
     String strP5 = parseString(strLine, 7);
+
+    if (setting.equalsIgnoreCase(F("AutoConnect"))){
+      Settings.AutoConnect = (Par2 == 1);
+    }
 
     if (setting.equalsIgnoreCase(F("Baudrate"))){
       if (Par2){
@@ -144,6 +162,10 @@ void ExecuteCommand(const char *Line)
     }
     if (setting.equalsIgnoreCase(F("Port"))){
       Settings.Port = Par2;
+    }
+
+    if (setting.equalsIgnoreCase(F("Time"))){
+      Settings.UseTime = (Par2 == 1);
     }
 
     if (setting.equalsIgnoreCase(F("Timezone"))){
@@ -197,34 +219,78 @@ void ExecuteCommand(const char *Line)
 
   }
 
-  if (strcasecmp_P(Command, PSTR("Reset")) == 0)
+
+  //********************************************************************************
+  // Operational commands
+  //********************************************************************************
+
+  if (strcasecmp_P(Command, PSTR("DeepSleep")) == 0)
   {
     success = true;
-    SPIFFS.end();
-    Serial.println(F("RESET: formatting..."));
-    SPIFFS.format();
-    Serial.println(F("RESET: formatting done..."));
-    if (SPIFFS.begin()){
-      fs::File f = SPIFFS.open(FILE_BOOT, "w");
-      f.println(F("on System#Config do"));
-      f.println(F("  Config,WifiSSID,"));
-      f.println(F("  Config,WifiKey,"));
-      f.println(F("endon"));
-      f.close();
-      f = SPIFFS.open(FILE_RULES, "w");
-      f.close();
-    }
-    else{
-      Serial.println(F("RESET: FORMAT SPIFFS FAILED!"));
-    }
+    #if defined(ESP8266)
+      ESP.deepSleep(Par1 * 1000000, WAKE_RF_DEFAULT); // Sleep for set delay
+    #endif
+  }
+
+  if (strcasecmp_P(Command, PSTR("Delay")) == 0)
+  {
+    success = true;
+    delay(Par1);
   }
   
-  // operational commands
-  #if FEATURE_MQTT
-  if (strcasecmp_P(Command, PSTR("SubScribe")) == 0)
+  #if FEATURE_ESPNOW
+  if (strcasecmp_P(Command, PSTR("espnowConfig")) == 0)
   {
     success = true;
-    MQTTclient.subscribe(&Line[10]);
+    String strLine = Line;
+    String kok = parseString(strLine, 2);
+    String key = parseString(strLine, 3);
+    String macStr = parseString(strLine, 4);
+    String mode = parseString(strLine, 5);
+    byte mac[6];
+    parseBytes(macStr.c_str(), ':', mac, 6, 16);
+    if (mode.equalsIgnoreCase(F("Sender"))){
+      espnowSender(kok.c_str(), key.c_str(), mac);
+    }else{
+      espnowReceiver(kok.c_str(), key.c_str(), mac);
+    }
+  }
+
+  if (strcasecmp_P(Command, PSTR("espnowAddPeer")) == 0)
+  {
+    success = true;
+    String strLine = Line;
+    String key = parseString(strLine, 2);
+    String macStr = parseString(strLine, 3);
+    byte role = parseString(strLine, 4).toInt();
+    byte mac[6];
+    parseBytes(macStr.c_str(), ':', mac, 6, 16);
+    espnowAddPeer(key.c_str(), mac, role);
+  }  
+
+  if (strcasecmp_P(Command, PSTR("espnowsend")) == 0)
+  {
+    success = true;
+    String msg = Line;
+    msg = msg.substring(11);
+    espnowSend(msg);
+  }
+  #endif
+
+  #if FEATURE_I2C
+  if (strcasecmp_P(Command, PSTR("I2C")) == 0)
+  {
+    success = true;
+    byte error, address;
+    for (address = 1; address <= 127; address++) {
+      Wire.beginTransmission(address);
+      error = Wire.endTransmission();
+      if (error == 0) {
+        String log = F("I2C  : Found 0x");
+        log += String(address, HEX);
+        logger->println(log);
+      }
+    }
   }
   #endif
   
@@ -272,7 +338,7 @@ void ExecuteCommand(const char *Line)
     {
       success = true;
       getNtpTime();
-      telnetLog(getTimeString(':'));
+      logger->println(getTimeString(':'));
     }
   #endif
 
@@ -283,6 +349,21 @@ void ExecuteCommand(const char *Line)
     pinMode(2, INPUT);
     pinMode(15, INPUT);
     reboot();
+  }
+
+  if (strcasecmp_P(Command, PSTR("Reset")) == 0)
+  {
+    success = true;
+    SPIFFS.end();
+    logger->println(F("RESET: formatting..."));
+    SPIFFS.format();
+    logger->println(F("RESET: formatting done..."));
+    if (SPIFFS.begin()){
+      initFiles();
+    }
+    else{
+      logger->println(F("RESET: FORMAT SPIFFS FAILED!"));
+    }
   }
 
   if (strcasecmp_P(Command, PSTR("SendToUDP")) == 0)
@@ -348,6 +429,32 @@ void ExecuteCommand(const char *Line)
     Settings.SerialTelnet = Par1;
   }
 
+  if (strcasecmp_P(Command, PSTR("Settings")) == 0)
+  {
+    success = true;
+    char str[20];
+    logger->println();
+
+    logger->println(F("System Info"));
+    IPAddress ip = WiFi.localIP();
+    sprintf_P(str, PSTR("%u.%u.%u.%u"), ip[0], ip[1], ip[2], ip[3]);
+    logger->print(F("  IP Address    : ")); logger->println(str);
+    logger->print(F("  Build         : ")); logger->println((int)BUILD);
+    String core = getSystemLibraryString();
+    logger->print(F("  Core          : ")); logger->println(core);
+    logger->print(F("  WifiSSID      : ")); logger->println(SecuritySettings.WifiSSID);
+    logger->print(F("  WifiKey       : ")); logger->println(SecuritySettings.WifiKey);
+    logger->print(F("  Wifi          : ")); logger->println(Settings.Wifi);
+  }
+
+  #if FEATURE_MQTT
+  if (strcasecmp_P(Command, PSTR("SubScribe")) == 0)
+  {
+    success = true;
+    MQTTclient.subscribe(&Line[10]);
+  }
+  #endif
+
 #if FEATURE_RULES
   if (strcasecmp_P(Command, PSTR("TimerSet")) == 0)
   {
@@ -399,6 +506,24 @@ void ExecuteCommand(const char *Line)
     }
   }
 
+  if (strcasecmp_P(Command, PSTR("Syslog")) == 0)
+  {
+    success = true;
+    String log = Line;
+    log = log.substring(7);
+    syslog(log);
+  }
+
+  #if FEATURE_ADC_VCC
+    if (strcasecmp_P(Command, PSTR("VCCRead")) == 0)
+    {
+      success = true;
+      String strLine = Line;
+      String varName = parseString(strLine, 2);
+      setNvar(varName, ESP.getVcc() / 1000.0);
+    }
+  #endif
+
   if (strcasecmp_P(Command, PSTR("webPrint")) == 0)
   {
     success = true;
@@ -424,41 +549,32 @@ void ExecuteCommand(const char *Line)
   
 #endif
 
-  if (strcasecmp_P(Command, PSTR("Settings")) == 0)
+  if (strcasecmp_P(Command, PSTR("WifiConnect")) == 0)
   {
     success = true;
-    char str[20];
-    Serial.println();
-
-    Serial.println(F("System Info"));
-    IPAddress ip = WiFi.localIP();
-    sprintf_P(str, PSTR("%u.%u.%u.%u"), ip[0], ip[1], ip[2], ip[3]);
-    Serial.print(F("  IP Address    : ")); Serial.println(str);
-    Serial.print(F("  Build         : ")); Serial.println((int)BUILD);
-    String core = getSystemLibraryString();
-    Serial.print(F("  Core          : ")); Serial.println(core);
-    Serial.print(F("  WifiSSID      : ")); Serial.println(SecuritySettings.WifiSSID);
-    Serial.print(F("  WifiKey       : ")); Serial.println(SecuritySettings.WifiKey);
+    String strLine = Line;
+    String ssid = parseString(strLine, 2);
+    String key = parseString(strLine, 3);
+    WiFi.begin(ssid.c_str(),key.c_str());
   }
 
-  if (strcasecmp_P(Command, PSTR("Syslog")) == 0)
+  if (strcasecmp_P(Command, PSTR("WifiInit")) == 0)
   {
     success = true;
-    String log = Line;
-    log = log.substring(7);
-    syslog(log);
+    WifiInit();
   }
   
   if (success)
-    telnetLog("OK");
+    logger->println("OK");
   else
-    telnetLog("???");
+    logger->println("?");
 }
 
 
-/********************************************************************************************\
-  Find positional parameter in a char string
-  \*********************************************************************************************/
+//*********************************************************************************************
+// Find positional parameter in a char string
+//*********************************************************************************************
+
 boolean GetArgv(const char *string, char *argv, int argc)
 {
   int string_pos = 0, argv_pos = 0, argc_pos = 0;

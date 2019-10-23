@@ -1,6 +1,6 @@
-/********************************************************************************************\
-Telnet
-\*********************************************************************************************/
+//********************************************************************************************
+// Telnet communications
+//********************************************************************************************
 void telnet() {
   byte telnetByte = 0;
 
@@ -12,6 +12,7 @@ void telnet() {
 
   if (ser2netClient.connected())
   {
+    logger = &ser2netClient;
     while (ser2netClient.available()) {
       telnetByte = ser2netClient.read();
 
@@ -36,40 +37,12 @@ void telnet() {
   }
   else
   {
+    logger = &Serial;
     if (connectionState == 1) // there was a client connected before...
     {
       connectionState = 0;
       ser2netClient = WiFiClient();
     }
-  }
-}
-
-
-/********************************************************************************************\
-Telnet log
-\*********************************************************************************************/
-void telnetLog(String s)
-{
-  if(Settings.SerialTelnet) return;
-  
-  if (ser2netClient.connected()) {
-    ser2netClient.println(s);
-    ser2netClient.flush();
-  }
-}
-
-
-/********************************************************************************************\
-Telnet log flashstring
-\*********************************************************************************************/
-void telnetLog(const __FlashStringHelper* flashString)
-{
-  if(Settings.SerialTelnet) return;
-
-  if (ser2netClient.connected()) {
-    String s(flashString);
-    ser2netClient.println(s);
-    ser2netClient.flush();
   }
 }
 

@@ -1,5 +1,76 @@
-void syslog(String msg){
+//********************************************************************************************
+// Try to mount SPIFFS, boot rules when spiffs is ok
+//********************************************************************************************
 
+void ConfigInit(){
+  if (SPIFFS.begin())
+  {
+    String event = "";
+    #if SERIALDEBUG
+      Serial.println("SPIFFS init");
+    #endif
+    event = F("System#Config");
+    if (SPIFFS.exists(FILE_BOOT)){
+      bootConfig = true;
+      #if FEATURE_RULES
+        rulesProcessing(FILE_BOOT, event);
+      #endif
+    }
+    else{
+      Serial.begin(115200);
+      if (SPIFFS.exists(FILE_SECURITY)){
+        LoadSettings(); // use security.dat
+      }
+      else
+      {
+        SecuritySettings.WifiSSID[0] = 0;
+        SecuritySettings.WifiKey[0] = 0;
+        strcpy(SecuritySettings.WifiAPKey, "configesp");
+      }
+      initFiles();
+    }
+    
+    #if FEATURE_RULES
+      rulesProcessing(FILE_RULES, event);
+    #endif
+  }
+  else
+  {
+    Serial.begin(115200);
+    Serial.println("SPIFFS?");
+    delay(1);
+  }
+
+}
+
+void initFiles(){
+  fs::File f = SPIFFS.open(FILE_BOOT, "w");
+  f.println(F("on System#Config do"));
+  f.println(F("  Config,BaudRate,115200"));
+  f.print(F("  Config,WifiSSID,"));
+  f.println(SecuritySettings.WifiSSID);
+  f.print(F("  Config,WifiKey,"));
+  f.println(SecuritySettings.WifiKey);
+  f.println(F("endon"));
+  f.close();
+  f = SPIFFS.open(FILE_RULES, "w");
+  f.close();
+}
+void parseBytes(const char* str, char sep, byte* bytes, int maxBytes, int base) {
+    for (int i = 0; i < maxBytes; i++) {
+        bytes[i] = strtoul(str, NULL, base);  // Convert byte
+        str = strchr(str, sep);               // Find next separator
+        if (str == NULL || *str == '\0') {
+            break;                            // No more separators, exit
+        }
+        str++;                                // Point to next character after separator
+    }
+}
+
+void syslog(String msg){
+  if(WiFi.status() != WL_CONNECTED)
+    return;
+    
   String log = "<7>";
   log += Settings.Name;
   log += " ";
@@ -89,6 +160,7 @@ String parseTemplate(String &tmpString, byte lineSize)
     newString.replace(F("%systime%"), getTimeString(':'));
   #endif
   newString.replace(F("%sysname%"), Settings.Name);
+  newString.replace(F("%millis%"), String(millis()));
   return newString;
 }
 
@@ -298,7 +370,7 @@ boolean SaveToFile(char* fname, int index, byte * memAddress, int datasize)
     f.close();
     success = true;
   }
-  telnetLog(F("DBG: Flash Save"));
+  logger->println(F("DBG: Flash Save"));
   return success;
 }
 

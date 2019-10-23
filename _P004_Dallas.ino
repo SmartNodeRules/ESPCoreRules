@@ -7,6 +7,7 @@
  * Dallas <variable>,<pin>                   Read temperature value into variable
 */
 
+#ifdef USES_P004
 #define PLUGIN_004
 #define PLUGIN_ID_004         4
 
@@ -148,4 +149,5 @@ boolean dallas(String varName, byte Pin)
   }
   return success;
 }
+#endif
 

@@ -39,7 +39,7 @@ void MSGBusReceive() {
       }
 
       if(Settings.LogEvents)
-        telnetLog(String("UDP: ") + msg);
+        logger->println(String("UDP: ") + msg);
       return; // This message needs no further processing, so return.
     }
 
@@ -63,7 +63,7 @@ void MSGBusReceive() {
     #endif
 
     if(Settings.LogEvents)
-      telnetLog(String("UDP: ") + msg);
+      logger->println(String("UDP: ") + msg);
   }
 }
 
@@ -126,7 +126,7 @@ void MSGBusQueue() {
         }
       }
       else{
-        telnetLog(F("Confirmation Timeout"));
+        logger->println(F("Confirmation Timeout"));
         confirmQueue[x].State = 0;
       }
     }
@@ -218,14 +218,14 @@ void MQTTConnect()
     if (MQTTresult)
     {
       log = F("MQTT : Connected to broker");
-      telnetLog(log);
+      logger->println(log);
       MQTTclient.subscribe(subscribeTo.c_str());
       break; // end loop if succesfull
     }
     else
     {
       log = F("MQTT : Failed to connected to broker");
-      telnetLog(log);
+      logger->println(log);
     }
 
     delay(500);
@@ -242,7 +242,7 @@ void MQTTCheck()
     if (!MQTTclient.connected())
     {
       String log = F("MQTT : Connection lost");
-      telnetLog(log);
+      logger->println(log);
       connectionFailures += 2;
       MQTTclient.disconnect();
       delay(1000);
