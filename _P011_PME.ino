@@ -13,6 +13,7 @@
 */ 
 
 #ifdef USES_P011
+#define P011_BUILD            6
 #define PLUGIN_011
 #define PLUGIN_ID_011         11
 
@@ -35,7 +36,8 @@ boolean Plugin_011(byte function, String& cmd, String& params)
   {
     case PLUGIN_INFO:
       {
-        printWebTools += F("<TR><TD><TD>P011 - PME");
+        printWebTools += F("<TR><TD>P011 - PME<TD>");
+        printWebTools += P011_BUILD;
         break;
       }
       

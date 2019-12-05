@@ -9,6 +9,7 @@
 */
 
 #ifdef USES_P200
+#define P200_BUILD            6
 #define PLUGIN_200
 #define PLUGIN_ID_200         200
 
@@ -36,7 +37,8 @@ boolean Plugin_200(byte function, String& cmd, String& params)
   {
     case PLUGIN_INFO:
       {
-        printWebTools += F("<TR><TD><TD>P200 - NanoCore");
+        printWebTools += F("<TR><TD>P200 - NanoCore<TD>");
+        printWebTools += P200_BUILD;
         break;
       }
           

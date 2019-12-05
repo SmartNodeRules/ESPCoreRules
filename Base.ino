@@ -5,6 +5,11 @@ void setup2()
 {
   logger = &Serial;
 
+  for (byte x = 0; x < PLUGIN_FASTCALL_MAX; x++)
+    corePluginCall_ptr[x]=0;
+  
+  coreSerialCall_ptr = &serial;
+  
   WiFi.mode(WIFI_OFF);    // Allways start in OFF mode
   #if defined(ESP8266)
     WiFi.forceSleepBegin();
@@ -22,6 +27,7 @@ void setup2()
   #endif
   
   ConfigInit();
+    
   serialInit();
   if(Settings.Wifi && Settings.AutoConnect){
     WifiInit();
@@ -43,20 +49,15 @@ void setup2()
 //*********************************************************************************************
 void loop()
 {
-  serial();
+  coreSerialCall_ptr();
 
-  if(WifiClient()){
+  // handle plugins that reqistered a fast loop call
+  for(byte x=0; x < PLUGIN_FASTCALL_MAX; x++)
+    if(corePluginCall_ptr[x] != 0)
+      corePluginCall_ptr[x]();
+  
+  if(WifiConnected()){
     WebServer.handleClient();
-
-    #if FEATURE_MSGBUS
-      if(Settings.Wifi && Settings.UseMSGBusUDP)
-        MSGBusReceive();
-    
-      #if FEATURE_MQTT
-      if(Settings.UseMSGBusMQTT) 
-        MQTTclient.loop();
-      #endif
-    #endif
 
     telnet();
     
@@ -102,10 +103,6 @@ void run10PerSecond(){
   #if FEATURE_PLUGINS
     PluginCall(PLUGIN_TEN_PER_SECOND, dummyString, dummyString);
   #endif
-  #if FEATURE_MSGBUS
-    if(WifiClient() && Settings.UseMSGBusUDP)
-      MSGBusQueue();
-  #endif
 }
 
 
@@ -122,7 +119,7 @@ void runEachSecond() {
     PluginCall(PLUGIN_ONCE_A_SECOND, dummyString, dummyString);
   #endif
   #if FEATURE_TIME
-    if(WifiClient() && Settings.UseTime)
+    if(WifiConnected() && Settings.UseTime)
       checkTime();
   #endif
   #if FEATURE_RULES
@@ -136,24 +133,20 @@ void runEachSecond() {
 void runEach60Seconds() {
     timer60 = millis() + 60000;
     uptime++;
+
+    #if FEATURE_PLUGINS
+      PluginCall(PLUGIN_ONCE_A_MINUTE, dummyString, dummyString);
+    #endif
+
     if(Settings.Wifi && Settings.AutoConnect){
       if(Settings.AutoAPOnFailure)
         WifiCheck();
-      if(WifiClient() && Settings.UseGratuitousARP)   
+      if(WifiConnected() && Settings.UseGratuitousARP)   
         sendGratuitousARP();
     }
-    #if FEATURE_MQTT
-    if(WifiClient() && Settings.UseMSGBusMQTT) 
-      MQTTCheck();
-    #endif
 
     refreshNodeList();
     
-    #if FEATURE_MSGBUS
-      if(WifiClient()){
-        MSGBusAnnounceMe();
-      }
-    #endif
     loopCounterLast = loopCounter;
     loopCounter = 0;
 }

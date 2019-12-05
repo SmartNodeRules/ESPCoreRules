@@ -1040,6 +1040,11 @@ void PluginInit(void)
   Plugin_id[x] = 255; Plugin_ptr[x++] = &Plugin_255;
 #endif
 
+  // Enable all loaded plugins by default
+  for (byte x = 0; x < PLUGIN_MAX; x++)
+    if(Plugin_id[x] !=0)
+      Plugin_Enabled[x] = true;
+      
   PluginCall(PLUGIN_INIT, dummyString, dummyString);
 
 }
@@ -1055,21 +1060,35 @@ byte PluginCall(byte Function, String& cmd, String& params)
   switch (Function)
   {
     // Unconditional calls to all plugins
-    case PLUGIN_INIT:
-    case PLUGIN_ONCE_A_SECOND:
-    case PLUGIN_TEN_PER_SECOND:
     case PLUGIN_INFO:    
       for (x = 0; x < PLUGIN_MAX; x++)
-        if (Plugin_id[x] != 0)
+        if (Plugin_id[x] != 0){
+          Plugin_ptr[x](Function, cmd, params);
+          printWebTools += "<TD>";
+          if(Plugin_Enabled[x])
+            printWebTools += F("Yes");
+          else
+            printWebTools += F("No");
+        }
+      return true;
+      break;
+
+    // Calls to all enabled plugins
+    case PLUGIN_INIT:
+    case PLUGIN_TEN_PER_SECOND:
+    case PLUGIN_ONCE_A_SECOND:
+    case PLUGIN_ONCE_A_MINUTE:
+      for (x = 0; x < PLUGIN_MAX; x++)
+        if (Plugin_id[x] != 0 && Plugin_Enabled[x])
           Plugin_ptr[x](Function, cmd, params);
       return true;
       break;
 
-    // Call to all plugins. Return at first match
+    // Calls to all enabled plugins. Return at first match
     case PLUGIN_WRITE:
     case PLUGIN_SERIAL_IN:
       for (x = 0; x < PLUGIN_MAX; x++)
-        if (Plugin_id[x] != 0)
+        if (Plugin_id[x] != 0 && Plugin_Enabled[x])
           if (Plugin_ptr[x](Function, cmd, params))
             return true;
       break;

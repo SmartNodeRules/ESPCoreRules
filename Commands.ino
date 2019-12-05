@@ -15,7 +15,8 @@ void ExecuteCommand(const char *Line)
       cmd = cmd.substring(0, parampos - 1);
     }
     if (PluginCall(PLUGIN_WRITE, cmd, params)) {
-      logger->println("OK");
+      if(Settings.LogEvents)
+        logger->println("OK");
       return;
     }
   #endif
@@ -35,64 +36,6 @@ void ExecuteCommand(const char *Line)
   if (GetArgv(Line, TmpStr1, 3)) Par2 = str2int(TmpStr1);
   if (GetArgv(Line, TmpStr1, 4)) Par3 = str2int(TmpStr1);
   if (GetArgv(Line, TmpStr1, 5)) Par4 = str2int(TmpStr1);
-
-
-  //********************************************************************************
-  // Some Debug commands, unofficial stuff goes here
-  //********************************************************************************
-
-  #if FEATURE_DEBUG_CMD
-  if (strcasecmp_P(Command, PSTR("WifiOff")) == 0)
-  {
-    success = true;
-    WiFi.mode( WIFI_OFF );
-    #if defined(ESP8266)
-      WiFi.forceSleepBegin();
-    #endif
-    delay(1);
-  }
-  if (strcasecmp_P(Command, PSTR("WifiClear")) == 0)
-  {
-    success = true;
-    #if defined(ESP8266)
-      ESP.eraseConfig();
-      ESP.reset();
-    #endif
-  }
-  if (strcasecmp_P(Command, PSTR("WifiConnectPersistent")) == 0)
-  {
-    success = true;
-    String strLine = Line;
-    String ssid = parseString(strLine, 2);
-    String key = parseString(strLine, 3);
-    WiFi.persistent(true);
-    WiFi.begin(ssid.c_str(),key.c_str());
-  }
-  if (strcasecmp_P(Command, PSTR("WifiDisConnect")) == 0)
-  {
-    success = true;
-    WiFi.disconnect();
-  }
-  if (strcasecmp_P(Command, PSTR("WifiStatus")) == 0)
-  {
-    success = true;
-    Serial.println(WiFi.status());
-  }
-  if (strcasecmp_P(Command, PSTR("WifiAPMode")) == 0)
-  {
-    success = true;
-    WifiAPMode(true);
-    Settings.ForceAPMode = (Par1 == 1);
-  }
-  
-  #if SERIALDEBUG
-    if (strcasecmp_P(Command, PSTR("debugLevel")) == 0)
-    {
-      success = true;
-      debugLevel = Par1;
-    }
-  #endif
-  #endif
     
   //********************************************************************************
   // Config commands
@@ -140,6 +83,16 @@ void ExecuteCommand(const char *Line)
       strcpy(Settings.Group, strP1.c_str());
     }
 
+  #if FEATURE_I2C
+    if (setting.equalsIgnoreCase(F("I2C"))){
+      if(Par2 == 0){
+        Wire.begin();
+      }else{
+        Wire.begin(Par2,Par3);
+      }
+    }
+  #endif
+  
     if (setting.equalsIgnoreCase(F("Network"))){
       char tmpString[26];
       strP1.toCharArray(tmpString, 26);
@@ -154,8 +107,31 @@ void ExecuteCommand(const char *Line)
       IPAddress gw = Settings.Gateway;
       IPAddress subnet = Settings.Subnet;
       IPAddress dns = Settings.DNS;
-//      WiFi.config(ip, gw, subnet, dns);
     }
+    
+    #if FEATURE_PLUGINS
+    if (setting.equalsIgnoreCase(F("Plugins"))){
+      int parampos = getParamStartPos(strLine, 3);
+      if (parampos != -1) {
+        params = strLine.substring(parampos);
+        logger->println(params);
+        byte plugin[PLUGIN_MAX];
+        for (byte x = 0; x < PLUGIN_MAX; x++){
+          plugin[x]=0;
+          Plugin_Enabled[x] = false;
+        }
+        parseBytes(params.c_str(), ',', plugin, PLUGIN_MAX, 10);
+        for (byte p = 0; p < PLUGIN_MAX; p++){
+          if(plugin[p] == 0)
+            break;
+          if(plugin[p] != 0)
+            for (byte x = 0; x < PLUGIN_MAX; x++)
+              if(Plugin_id[x] == plugin[p])
+                Plugin_Enabled[x] = true;
+        }
+      }
+    }
+    #endif
 
     if (setting.equalsIgnoreCase(F("sendARP"))){
       Settings.UseGratuitousARP = (Par2 == 1);
@@ -186,25 +162,6 @@ void ExecuteCommand(const char *Line)
 
     if (setting.equalsIgnoreCase(F("WifiAPKey")))
       strcpy(SecuritySettings.WifiAPKey, strP1.c_str());
-
-    if (setting.equalsIgnoreCase(F("MSGBUS"))){
-      if(strP1.equalsIgnoreCase(F("UDP")))
-        Settings.UseMSGBusUDP = (Par3 == 1);
-      if(strP1.equalsIgnoreCase(F("MQTT")))
-        Settings.UseMSGBusMQTT = (Par3 == 1);
-    }
-
-    #if FEATURE_MQTT
-      if (setting.equalsIgnoreCase(F("MQTT"))){
-        char tmpString[26];
-        strP1.toCharArray(tmpString, 26);
-        str2ip(tmpString, Settings.Controller_IP);
-        Settings.ControllerPort = strP2.toInt();
-        strcpy(SecuritySettings.ControllerUser, strP3.c_str());
-        strcpy(SecuritySettings.ControllerPassword, strP4.c_str());
-        MQTTConnect();
-      }
-    #endif
 
     if (setting.equalsIgnoreCase(F("Rules"))){
       if(strP1.equalsIgnoreCase(F("Clock")))
@@ -237,45 +194,6 @@ void ExecuteCommand(const char *Line)
     success = true;
     delay(Par1);
   }
-  
-  #if FEATURE_ESPNOW
-  if (strcasecmp_P(Command, PSTR("espnowConfig")) == 0)
-  {
-    success = true;
-    String strLine = Line;
-    String kok = parseString(strLine, 2);
-    String key = parseString(strLine, 3);
-    String macStr = parseString(strLine, 4);
-    String mode = parseString(strLine, 5);
-    byte mac[6];
-    parseBytes(macStr.c_str(), ':', mac, 6, 16);
-    if (mode.equalsIgnoreCase(F("Sender"))){
-      espnowSender(kok.c_str(), key.c_str(), mac);
-    }else{
-      espnowReceiver(kok.c_str(), key.c_str(), mac);
-    }
-  }
-
-  if (strcasecmp_P(Command, PSTR("espnowAddPeer")) == 0)
-  {
-    success = true;
-    String strLine = Line;
-    String key = parseString(strLine, 2);
-    String macStr = parseString(strLine, 3);
-    byte role = parseString(strLine, 4).toInt();
-    byte mac[6];
-    parseBytes(macStr.c_str(), ':', mac, 6, 16);
-    espnowAddPeer(key.c_str(), mac, role);
-  }  
-
-  if (strcasecmp_P(Command, PSTR("espnowsend")) == 0)
-  {
-    success = true;
-    String msg = Line;
-    msg = msg.substring(11);
-    espnowSend(msg);
-  }
-  #endif
 
   #if FEATURE_I2C
   if (strcasecmp_P(Command, PSTR("I2C")) == 0)
@@ -293,52 +211,16 @@ void ExecuteCommand(const char *Line)
     }
   }
   #endif
-  
-  #if FEATURE_MSGBUS
-    if (strcasecmp_P(Command, PSTR("MSGBus")) == 0)
-    {
-      success = true;
-      String msg = Line;
-      msg = msg.substring(7);
-    
-      if(Settings.UseMSGBusUDP){ 
-        if (msg[0] == '>') {
-          for (byte x = 0; x < CONFIRM_QUEUE_MAX ; x++) {
-            if (confirmQueue[x].State == 0) {
-              confirmQueue[x].Name = msg;
-              confirmQueue[x].Attempts = 9;
-              confirmQueue[x].State = 1;
-              confirmQueue[x].TimerTicks = 3;
-              UDPSend(msg);
-              break;
-            }
-          }
-        }
-        else
-          UDPSend(msg);
-      }
-    
-      #if FEATURE_MQTT
-        if(Settings.UseMSGBusMQTT){ 
-          String topic = F(MSGBUS_TOPIC);
-          String payload = "";
-          int pos = msg.indexOf('=');
-          if(pos != -1){
-            topic += msg.substring(0,pos);
-            payload = msg.substring(pos+1);
-          }
-          MQTTclient.publish(topic.c_str(), payload.c_str(),Settings.MQTTRetainFlag);
-        }
-      #endif
-    }
-  #endif
 
   #if FEATURE_TIME
     if (strcasecmp_P(Command, PSTR("NTP")) == 0)
     {
       success = true;
-      getNtpTime();
-      logger->println(getTimeString(':'));
+      unsigned long  t = updateNtp();
+      if(t)
+        logger->println(getTimeString(':'));
+      else
+        logger->println(F("No Reply!"));
     }
   #endif
 
@@ -377,6 +259,7 @@ void ExecuteCommand(const char *Line)
     byte ipaddress[4];
     str2ip((char*)ip.c_str(), ipaddress);
     IPAddress UDP_IP(ipaddress[0], ipaddress[1], ipaddress[2], ipaddress[3]);
+    WiFiUDP portUDP;
     portUDP.beginPacket(UDP_IP, port.toInt());
     #if defined(ESP8266)
       portUDP.write(message.c_str(), message.length());
@@ -446,14 +329,6 @@ void ExecuteCommand(const char *Line)
     logger->print(F("  WifiKey       : ")); logger->println(SecuritySettings.WifiKey);
     logger->print(F("  Wifi          : ")); logger->println(Settings.Wifi);
   }
-
-  #if FEATURE_MQTT
-  if (strcasecmp_P(Command, PSTR("SubScribe")) == 0)
-  {
-    success = true;
-    MQTTclient.subscribe(&Line[10]);
-  }
-  #endif
 
 #if FEATURE_RULES
   if (strcasecmp_P(Command, PSTR("TimerSet")) == 0)
@@ -563,11 +438,13 @@ void ExecuteCommand(const char *Line)
     success = true;
     WifiInit();
   }
-  
-  if (success)
-    logger->println("OK");
-  else
-    logger->println("?");
+
+  if(Settings.LogEvents){
+    if (success)
+      logger->println("OK");
+    else
+      logger->println("?");
+  }
 }
 
 

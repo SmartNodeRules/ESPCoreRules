@@ -41,7 +41,6 @@ void telnet() {
     if (connectionState == 1) // there was a client connected before...
     {
       connectionState = 0;
-      ser2netClient = WiFiClient();
     }
   }
 }

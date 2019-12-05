@@ -12,6 +12,7 @@
 */
 
 #ifdef USES_P001
+#define P001_BUILD            6
 #define PLUGIN_001
 #define PLUGIN_ID_001         1
 
@@ -28,7 +29,8 @@ boolean Plugin_001(byte function, String& cmd, String& params)
   {
     case PLUGIN_INFO:
       {
-        printWebTools += F("<TR><TD><TD>P001 - Switch");
+        printWebTools += F("<TR><TD>P001 - Switch<TD>");
+        printWebTools += P001_BUILD;
         break;
       }
       
@@ -39,7 +41,7 @@ boolean Plugin_001(byte function, String& cmd, String& params)
           success = true;
           byte pin = parseString(params,1).toInt();
           byte state = parseString(params,2).toInt();
-          if (pin >= 0 && pin <= 16)
+          if (pin >= 0 && pin <= PIN_D_MAX)
           {
             pinMode(pin, OUTPUT);
             digitalWrite(pin, state);

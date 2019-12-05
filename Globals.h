@@ -1,8 +1,9 @@
-#define BUILD                               5
+#define BUILD                               6
 
 #define CMD_REBOOT                         89
 #define UNIT_MAX                           32
 #define PLUGIN_MAX                         32
+#define PLUGIN_FASTCALL_MAX                 8
 #define RULES_MAX_SIZE                   2048
 #define RULES_BUFFER_SIZE                  64
 #define RULES_MAX_NESTING_LEVEL             3
@@ -18,6 +19,7 @@
 #define PLUGIN_WRITE                       13
 #define PLUGIN_SERIAL_IN                   16
 #define PLUGIN_UNCONDITIONAL_POLL          25
+#define PLUGIN_ONCE_A_MINUTE              254
 #define PLUGIN_INFO                       255
 
 #if defined(ESP32)
@@ -83,15 +85,6 @@ byte connectionState = 0;
 #include <WiFiUdp.h>
 #include <FS.h>
 using namespace fs;
-WiFiUDP portUDP;
-
-#if FEATURE_MQTT
-  #include <PubSubClient.h>
-  WiFiClient mqtt;
-  PubSubClient MQTTclient(mqtt);
-  unsigned long connectionFailures;
-  #define MSGBUS_TOPIC "BROADCAST/"
-#endif
 
 struct SecurityStruct
 {
@@ -131,12 +124,8 @@ struct SettingsStruct
   byte          SerialTelnet=0;
   byte          Controller_IP[4];
   unsigned int  ControllerPort;
-  char          MQTTsubscribe[80];
-  boolean       MQTTRetainFlag;
-  boolean       UseMSGBusUDP = true;
-  boolean       UseMSGBusMQTT;
   boolean       UseGratuitousARP = false;
-  boolean        LogEvents = false;
+  boolean       LogEvents = false;
   boolean       ForceAPMode = false;
 } Settings;
 
@@ -169,14 +158,6 @@ struct timerStruct
 } RulesTimer[RULES_TIMER_MAX];
 #endif
 
-struct confirmQueueStruct
-{
-  String Name;
-  byte Attempts;
-  byte State;
-  byte TimerTicks;
-} confirmQueue[CONFIRM_QUEUE_MAX];
-
 unsigned int NC_Count = 0;
 unsigned int C_Count = 0;
 boolean AP_Mode = false;
@@ -208,6 +189,7 @@ unsigned long loopCounterLast=0;
 #if FEATURE_PLUGINS
   boolean (*Plugin_ptr[PLUGIN_MAX])(byte, String&, String&);
   byte Plugin_id[PLUGIN_MAX];
+  byte Plugin_Enabled[PLUGIN_MAX];
   String dummyString = "";
 #endif
 
@@ -216,3 +198,6 @@ unsigned long loopCounterLast=0;
 #endif
 
 Print* logger;
+void (*coreSerialCall_ptr)(void);
+void (*corePluginCall_ptr[PLUGIN_FASTCALL_MAX])(void);
+

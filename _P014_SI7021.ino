@@ -8,6 +8,7 @@
 */
 
 #ifdef USES_P014
+#define P014_BUILD            6
 #define PLUGIN_014
 #define PLUGIN_ID_014        14
 
@@ -39,6 +40,13 @@ boolean Plugin_014(byte function, String& cmd, String& params)
 
   switch (function)
   {
+    case PLUGIN_INFO:
+      {
+        printWebTools += F("<TR><TD>P014 - SI7021<TD>");
+        printWebTools += P014_BUILD;
+        break;
+      }
+          
     case PLUGIN_WRITE:
       {
         if (cmd.equalsIgnoreCase(F("SI7021")))

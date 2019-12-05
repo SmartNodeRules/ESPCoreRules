@@ -18,6 +18,7 @@
 */
 
 #ifdef USES_P201
+#define P201_BUILD            6
 #define PLUGIN_201
 #define PLUGIN_ID_201         201
 
@@ -29,7 +30,8 @@ boolean Plugin_201(byte function, String& cmd, String& params)
   {
     case PLUGIN_INFO:
       {
-        printWebTools += F("<TR><TD><TD>P201 - TuyaSend");
+        printWebTools += F("<TR><TD>P201 - TuyaSend<TD>");
+        printWebTools += P201_BUILD;
         break;
       }
           

@@ -1,7 +1,20 @@
 //********************************************************************************************
+// Register fast loop calls to plugins that need fast handling of things like networking
+//********************************************************************************************
+boolean registerFastPluginCall(void (function(void))){
+  for(byte x=0; x < PLUGIN_FASTCALL_MAX; x++){
+    if(corePluginCall_ptr[x] == 0){
+      corePluginCall_ptr[x] = *function;
+      return true;
+    }
+  }
+  return false;
+}
+
+
+//********************************************************************************************
 // Try to mount SPIFFS, boot rules when spiffs is ok
 //********************************************************************************************
-
 void ConfigInit(){
   if (SPIFFS.begin())
   {
@@ -70,7 +83,8 @@ void parseBytes(const char* str, char sep, byte* bytes, int maxBytes, int base) 
 void syslog(String msg){
   if(WiFi.status() != WL_CONNECTED)
     return;
-    
+  WiFiUDP portUDP;
+      
   String log = "<7>";
   log += Settings.Name;
   log += " ";

@@ -10,6 +10,7 @@
 */
 
 #ifdef USES_P012
+#define P012_BUILD            6
 #define PLUGIN_012
 #define PLUGIN_ID_012         12
 
@@ -24,7 +25,8 @@ boolean Plugin_012(byte function, String& cmd, String& params)
   {
     case PLUGIN_INFO:
       {
-        printWebTools += F("<TR><TD><TD>P012 - LCD");
+        printWebTools += F("<TR><TD>P012 - LCD<TD>");
+        printWebTools += P012_BUILD;
         break;
       }
       

@@ -213,7 +213,8 @@ void handle_tools() {
 
   reply += F("<TR><TD>Build:<TD>");
   reply += BUILD;
-
+  reply += F(BUILD_NOTES);
+  
   reply += F("<TR><TD>LoopCount:<TD>");
   reply += loopCounterLast/60;
 
@@ -221,14 +222,8 @@ void handle_tools() {
   #if FEATURE_RULES
     reply += F("<TR><TD><TD>Rules");
   #endif
-  #if FEATURE_MSGBUS
-    reply += F("<TR><TD><TD>MSGBus");
-  #endif
   #if FEATURE_TIME
     reply += F("<TR><TD><TD>Time");
-  #endif
-  #if FEATURE_MQTT
-    reply += F("<TR><TD><TD>MQTT");
   #endif
   #if FEATURE_I2C
     reply += F("<TR><TD><TD>I2C");
@@ -236,9 +231,12 @@ void handle_tools() {
   #if FEATURE_ESPNOW
     reply += F("<TR><TD><TD>ESPNOW");
   #endif
- 
+
+  // Start a new table for the plugin list
+  reply += F("</table><table>");
+
   #if FEATURE_PLUGINS
-    reply += F("<TR><TD>Plugins:");
+    reply += F("<TR><TD>Plugins<TD>Build<TD>Enabled");
     printWebTools = "";
     PluginCall(PLUGIN_INFO, dummyString,  dummyString);
     reply += printWebTools;

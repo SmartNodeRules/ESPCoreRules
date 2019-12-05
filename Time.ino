@@ -29,6 +29,19 @@ uint32_t nextSyncTime = 0;
 
 byte PrevMinutes = 0;
 
+//********************************************************************************************
+// get time directly from NTP request
+//********************************************************************************************
+unsigned long updateNtp(){
+  unsigned long  t = getNtpTime();
+  if (t != 0) {
+    if (Settings.DST)
+      t += SECS_PER_HOUR; // add one hour if DST active
+    setTime(t);
+    breakTime(sysTime, tm);
+  }
+  return t;
+}
 
 //********************************************************************************************
 // get time as string like hh:mm
