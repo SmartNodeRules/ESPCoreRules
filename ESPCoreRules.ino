@@ -5,6 +5,7 @@
 // This tab does not contain code other than one call to setup2
 // Maintain your own version when required
 
+#define FACTORY_APKEY                    "configesp"
 #define BUILD_NOTES                      ""
 
 // Select features to include into the Core:
@@ -23,30 +24,31 @@
 #define PLUGIN_SET_ALL
 
 #ifdef PLUGIN_SET_BASIC
-#define USES_P001 // Switch
-#define USES_P002 // ADC
+  #define USES_P001 // Switch
+  #define USES_P002 // ADC
 #endif
 
 #ifdef PLUGIN_SET_ALL
-#define USES_P001 // Switch
-#define USES_P002 // ADC
-#define USES_P004 // Dallas
-#define USES_P011 // PME
-#define USES_P012 // LCD
-#define USES_P014 // SI7021
-#define USES_P100 // MSGBUS
-#define USES_P101 // MQTT
-#if defined(ESP8266)
-#define USES_P102 // ESPNOW
-#endif
-#define USES_P110 // HTTP
-//#define USES_P111 // HTTPS
-#define USES_P200 // Nano Serial
-#define USES_P201 // Tuya LSC
-#if defined(ESP32)
-#define USES_P203 // M5
-#endif
-#define USES_P255 // Debugging stuff
+  #define USES_P001 // Switch
+  #define USES_P002 // ADC
+  #define USES_P004 // Dallas
+  #define USES_P011 // PME
+  #define USES_P012 // LCD
+  #define USES_P014 // SI7021
+  #define USES_P100 // MSGBUS
+  #define USES_P101 // MQTT
+  #if defined(ESP8266)
+    #define USES_P102 // ESPNOW
+  #endif
+  #define USES_P110 // HTTP
+  //#define USES_P111 // HTTPS
+  #define USES_P200 // Nano Serial
+  #define USES_P201 // Tuya LSC
+  #if defined(ESP32)
+    #define USES_P203 // M5
+  #endif
+  #define USES_P254 // Local Log
+  #define USES_P255 // Debugging stuff
 #endif
 
 

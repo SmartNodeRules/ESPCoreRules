@@ -9,22 +9,23 @@
 */
 
 #ifdef USES_P200
-#define P200_BUILD            6
+#define P200_BUILD            7
 #define PLUGIN_200
 #define PLUGIN_ID_200         200
 
 #define NANO_RULES_MAX_SIZE   512
-#define NANO_MAX_LOG           20
 
 struct P200_LogStruct
 {
   unsigned long timeStamp;
   unsigned long delta;
-  String Message;
-} P200_Logging[NANO_MAX_LOG];
+  String *Message;
+};
+P200_LogStruct *P200_Logging;
 
 int P200_logcount = -1;
-unsigned long lastLogTime = 0;
+int P200_logMax = 10;
+unsigned long P200_lastLogTime = 0;
 int P200_bootSizeMax = 512;
 int P200_rulesSizeMax = 512;
 
@@ -44,17 +45,19 @@ boolean Plugin_200(byte function, String& cmd, String& params)
           
     case PLUGIN_SERIAL_IN:
       {
-        P200_logcount++;
-        if (P200_logcount >= NANO_MAX_LOG)
-          P200_logcount = 0;
-        #if FEATURE_TIME  
-          P200_Logging[P200_logcount].timeStamp = sysTime;
-        #else
-          P200_Logging[P200_logcount].timeStamp = millis();
-        #endif
-        P200_Logging[P200_logcount].delta = millis()-lastLogTime;
-        lastLogTime = millis();
-        P200_Logging[P200_logcount].Message = cmd;
+        if(init){
+          P200_logcount++;
+          if (P200_logcount >= P200_logMax)
+            P200_logcount = 0;
+          #if FEATURE_TIME  
+            P200_Logging[P200_logcount].timeStamp = sysTime;
+          #else
+            P200_Logging[P200_logcount].timeStamp = millis();
+          #endif
+          P200_Logging[P200_logcount].delta = millis()-P200_lastLogTime;
+          P200_lastLogTime = millis();
+          *P200_Logging[P200_logcount].Message = cmd;
+        }
         break;
       }
 
@@ -65,7 +68,17 @@ boolean Plugin_200(byte function, String& cmd, String& params)
         if (cmd.equalsIgnoreCase(F("NanoSerialInit")))
         {
           success = true;
-          init = true;
+
+          P200_Logging = (P200_LogStruct*)malloc(sizeof(P200_LogStruct) * P200_logMax);
+          if (P200_Logging != NULL) {
+            init = true;
+            for(byte x=0; x < P200_logMax; x++){
+             P200_Logging[x].timeStamp = 0;
+             P200_Logging[x].delta = 0;
+             P200_Logging[x].Message = new String();
+            }
+          }
+          
           Serial.println("echo 0");
           while (Serial.available()) Serial.read();
           Serial.println("rm b");
@@ -232,15 +245,15 @@ void P200_handle_log() {
         #else
           reply += P200_Logging[counter].timeStamp;
         #endif
-        reply += " ";
+        reply += " +";
         reply += P200_Logging[counter].delta;
         reply += " : ";
-        reply += P200_Logging[counter].Message;
+        reply += *P200_Logging[counter].Message;
         reply += F("<BR>");
       }
       counter--;
       if (counter == 255)
-        counter = NANO_MAX_LOG-1;
+        counter = P200_logMax-1;
     }  while (counter != P200_logcount);
   }
   reply += F("</table>");
@@ -308,16 +321,16 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
 
   String log = "";
 
-  logger->println(F("Start programming mode"));
+  P200_telnetLog(F("Start programming mode"));
   log = F(" proxyInit:");
   log += proxyInit;
-  logger->println(log);
+  P200_telnetLog(log);
   log = F(" TXdelay:");
   log += TXdelay;
-  logger->println(log);
+  P200_telnetLog(log);
   log = F(" RXwait:");
   log += RXwait;
-  logger->println(log);
+  P200_telnetLog(log);
 
   Serial.begin(115200);
   unsigned long end = millis() + 10000;
@@ -339,7 +352,7 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
       start = millis();
       if (progClient) progClient.stop();
       progClient = progServer.available();
-      logger->println(F("Client connected"));
+      P200_telnetLog(F("Client connected"));
       delay(0);
       if(proxyInit){ // we do the init message instead of waiting for ARVdude to do it
         Serial.write(0x30);
@@ -368,7 +381,7 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
         log = log.substring(0, 40);
         log += " c=";
         log += count;
-        logger->println(log);
+        P200_telnetLog(log);
 
         // wait max 100 ms for optiboot to reply
         unsigned long tr = micros();
@@ -380,7 +393,7 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
 
         duration = micros() - tr;
         if (!Serial.available()) {
-          logger->println(F("No reply"));
+          P200_telnetLog(F("No reply"));
         }
 
         if (Serial.available()) {
@@ -415,7 +428,7 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
           }
           delay(0);
           progClient.flush();
-          logger->println(log);
+          P200_telnetLog(log);
         }
       }
       delay(0);
@@ -425,7 +438,36 @@ void P200_ProgMode(boolean proxyInit, int TXdelay, int RXwait) {
   if (progClient) progClient.stop();
   delay(0);
   Serial.begin(Settings.BaudRate);
-  logger->println(F("End programming mode"));
+  P200_telnetLog(F("End programming mode"));
 }
+
+/********************************************************************************************\
+Telnet log
+\*********************************************************************************************/
+void P200_telnetLog(String s)
+{
+  if(Settings.SerialTelnet) return;
+  
+  if (ser2netClient.connected()) {
+    ser2netClient.println(s);
+    ser2netClient.flush();
+  }
+}
+
+
+/********************************************************************************************\
+Telnet log flashstring
+\*********************************************************************************************/
+void P200_telnetLog(const __FlashStringHelper* flashString)
+{
+  if(Settings.SerialTelnet) return;
+
+  if (ser2netClient.connected()) {
+    String s(flashString);
+    ser2netClient.println(s);
+    ser2netClient.flush();
+  }
+}
+
 #endif
 

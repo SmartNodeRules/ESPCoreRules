@@ -1,6 +1,56 @@
 //********************************************************************************************
 // Register fast loop calls to plugins that need fast handling of things like networking
 //********************************************************************************************
+boolean mallocVars(){
+
+  // Allocate memory for the nodelist array and init the string objects
+  sortedIndex = (byte*)malloc(Settings.NodeListMax+1);
+  if (Settings.NodeListMax){
+    Nodes = (NodeStruct*)malloc(sizeof(NodeStruct) * Settings.NodeListMax);
+    if (Nodes == NULL)
+      return false;
+    for(byte x=0; x < Settings.NodeListMax; x++){
+      Nodes[x].IP[0] = 0;
+      Nodes[x].age = 0;
+      Nodes[x].nodeName = new String();
+      Nodes[x].group = new String();
+    }
+  }
+
+  // Allocate memory for the uservars array and init the string objects
+  if (Settings.nUserVarMax){
+    nUserVar = (nvarStruct*)malloc(sizeof(nvarStruct) * Settings.nUserVarMax);
+    if (nUserVar == NULL)
+      return false;
+    for(byte x=0; x < Settings.nUserVarMax; x++){
+      nUserVar[x].Value = 0;
+      nUserVar[x].Decimals = 0;
+      nUserVar[x].Name = new String();
+    }
+  }
+  if (Settings.sUserVarMax){
+    sUserVar = (svarStruct*)malloc(sizeof(svarStruct) * Settings.sUserVarMax);
+    if (sUserVar == NULL)
+      return false;
+    for(byte x=0; x < Settings.sUserVarMax; x++){
+      sUserVar[x].Value = new String();
+      sUserVar[x].Name = new String();
+    }
+  }
+  if (Settings.TimerMax){
+    RulesTimer = (timerStruct*)malloc(sizeof(timerStruct) * Settings.TimerMax);
+    if (RulesTimer == NULL)
+      return false;
+    for(byte x=0; x < Settings.TimerMax; x++){
+      RulesTimer[x].Value = 0;
+      RulesTimer[x].Name = new String();
+    }
+  }
+  return true;
+}
+//********************************************************************************************
+// Register fast loop calls to plugins that need fast handling of things like networking
+//********************************************************************************************
 boolean registerFastPluginCall(void (function(void))){
   for(byte x=0; x < PLUGIN_FASTCALL_MAX; x++){
     if(corePluginCall_ptr[x] == 0){
@@ -156,25 +206,33 @@ String parseTemplate(String &tmpString, byte lineSize)
 {
   String newString = tmpString;
 
-  // check named uservars
-  for (byte x = 0; x < USER_VAR_MAX; x++) {
-    String varname = "%" + nUserVar[x].Name + "%";
-    String svalue = toString(nUserVar[x].Value, nUserVar[x].Decimals);
-    newString.replace(varname, svalue);
-  }
+  // immediate return if there's nothing to parse
+  if(newString.indexOf('%') == -1)
+    return newString;
 
-  // check named uservar strings
-  for (byte x = 0; x < USER_STRING_VAR_MAX; x++) {
-    String varname = "%" + sUserVar[x].Name + "%";
-    String svalue = String(sUserVar[x].Value);
-    newString.replace(varname, svalue);
-  }
+  if(mallocOK){
+    // check named uservars
+    for (byte x = 0; x < Settings.nUserVarMax; x++) {
+      String varname = "%" + *nUserVar[x].Name + "%";
+      String svalue = toString(nUserVar[x].Value, nUserVar[x].Decimals);
+      newString.replace(varname, svalue);
+    }
 
+    // check named uservar strings
+    for (byte x = 0; x < Settings.sUserVarMax; x++) {
+      String varname = "%" + *sUserVar[x].Name + "%";
+      String svalue = String(*sUserVar[x].Value);
+      newString.replace(varname, svalue);
+    }
+  }
+  
+  newString.replace(F("%group%"), Settings.Group);
+  newString.replace(F("%mac%"), WiFi.macAddress());
+  newString.replace(F("%millis%"), String(millis()));
+  newString.replace(F("%sysname%"), Settings.Name);
   #if FEATURE_TIME
     newString.replace(F("%systime%"), getTimeString(':'));
   #endif
-  newString.replace(F("%sysname%"), Settings.Name);
-  newString.replace(F("%millis%"), String(millis()));
   return newString;
 }
 
@@ -183,8 +241,11 @@ String parseTemplate(String &tmpString, byte lineSize)
   Get numerical Uservar by name
   \*********************************************************************************************/
 float getNvar(String varName) {
-  for (byte x = 0; x < USER_VAR_MAX; x++) {
-    if (nUserVar[x].Name == varName) {
+  if(!mallocOK)
+    return 0;
+    
+  for (byte x = 0; x < Settings.nUserVarMax; x++) {
+    if (*nUserVar[x].Name == varName) {
       return nUserVar[x].Value;
     }
   }
@@ -196,19 +257,22 @@ float getNvar(String varName) {
   Set numerical Uservar by name
   \*********************************************************************************************/
 void setNvar(String varName, float value, int decimals) {
+  if(!mallocOK)
+    return;
+    
   int pos = -1;
-  for (byte x = 0; x < USER_VAR_MAX; x++) {
-    if (nUserVar[x].Name == varName) {
+  for (byte x = 0; x < Settings.nUserVarMax; x++) {
+    if (*nUserVar[x].Name == varName) {
       nUserVar[x].Value = value;
       if (decimals != -1)
         nUserVar[x].Decimals = decimals;
       return;
     }
-    if (pos == -1 && nUserVar[x].Name.length() == 0)
+    if (pos == -1 && (*nUserVar[x].Name).length() == 0)
       pos = x;
   }
   if (pos != -1) {
-    nUserVar[pos].Name = varName;
+    *nUserVar[pos].Name = varName;
     nUserVar[pos].Value = value;
     if (decimals != -1)
       nUserVar[pos].Decimals = decimals;
@@ -222,10 +286,12 @@ void setNvar(String varName, float value, int decimals) {
   Set numerical Uservar Decimals by name
   \*********************************************************************************************/
 void setNvarDecimals(String varName, byte decimals) {
+  if(!mallocOK)
+    return;
 
   boolean found = false;
-  for (byte x = 0; x < USER_VAR_MAX; x++) {
-    if (nUserVar[x].Name == varName) {
+  for (byte x = 0; x < Settings.nUserVarMax; x++) {
+    if (*nUserVar[x].Name == varName) {
       nUserVar[x].Decimals = decimals;
       found = true;
       break;
@@ -238,9 +304,12 @@ void setNvarDecimals(String varName, byte decimals) {
   Get string Uservar by name
   \*********************************************************************************************/
 String getSvar(String varName) {
-  for (byte x = 0; x < USER_STRING_VAR_MAX; x++) {
-    if (sUserVar[x].Name == varName) {
-      return sUserVar[x].Value;
+  if(!mallocOK)
+    return "";
+    
+  for (byte x = 0; x < Settings.sUserVarMax; x++) {
+    if (*sUserVar[x].Name == varName) {
+      return *sUserVar[x].Value;
     }
   }
   return "";
@@ -251,18 +320,21 @@ String getSvar(String varName) {
   Set string Uservar by name
   \*********************************************************************************************/
 void setSvar(String varName, String value) {
+  if(!mallocOK)
+    return;
+    
   int pos = -1;
-  for (byte x = 0; x < USER_STRING_VAR_MAX; x++) {
-    if (sUserVar[x].Name == varName) {
-      sUserVar[x].Value = value;
+  for (byte x = 0; x < Settings.sUserVarMax; x++) {
+    if (*sUserVar[x].Name == varName) {
+      *sUserVar[x].Value = value;
       return;
     }
-    if (pos == -1 && sUserVar[x].Name.length() == 0)
+    if (pos == -1 && (*sUserVar[x].Name).length() == 0)
       pos = x;
   }
   if (pos != -1) {
-    sUserVar[pos].Name = varName;
-    sUserVar[pos].Value = value;
+    *sUserVar[pos].Name = varName;
+    *sUserVar[pos].Value = value;
   }
 }
 
@@ -285,9 +357,9 @@ void nodelist(IPAddress remoteIP, String hostName, String group) {
   boolean found = false;
   if(group.length()==0)
     group = "-";
-  for (byte x = 0; x < UNIT_MAX; x++) {
-    if (Nodes[x].nodeName == hostName) {
-      Nodes[x].group = group;
+  for (byte x = 0; x < Settings.NodeListMax; x++) {
+    if (*Nodes[x].nodeName == hostName) {
+      *Nodes[x].group = group;
       for (byte y = 0; y < 4; y++)
         Nodes[x].IP[y] = remoteIP[y];
       Nodes[x].age = 0;
@@ -296,10 +368,10 @@ void nodelist(IPAddress remoteIP, String hostName, String group) {
     }
   }
   if (!found) {
-    for (byte x = 0; x < UNIT_MAX; x++) {
+    for (byte x = 0; x < Settings.NodeListMax; x++) {
       if (Nodes[x].IP[0] == 0) {
-        Nodes[x].nodeName = hostName;
-        Nodes[x].group = group;
+        *Nodes[x].nodeName = hostName;
+        *Nodes[x].group = group;
         for (byte y = 0; y < 4; y++)
           Nodes[x].IP[y] = remoteIP[y];
         Nodes[x].age = 0;
@@ -316,7 +388,7 @@ void nodelist(IPAddress remoteIP, String hostName, String group) {
 void refreshNodeList()
 {
   // start at 1, 0 = myself and does not age...
-  for (byte counter = 1; counter < UNIT_MAX; counter++)
+  for (byte counter = 1; counter < Settings.NodeListMax; counter++)
   {
     if (Nodes[counter].IP[0] != 0)
     {
@@ -434,6 +506,31 @@ int getParamStartPos(String& string, byte indexFind)
     }
   }
   return -1;
+}
+
+
+//********************************************************************************************
+// Parse a value from a json formatted string (supports only single object)
+//********************************************************************************************
+String parseJSON(String json, String name){
+  name = "\"" + name + "\"";
+  int valuePos = json.indexOf(name);
+  if (valuePos != -1){
+    String valueString = json.substring(valuePos);
+    int colonPos = valueString.indexOf(":");
+    if (colonPos != -1){
+      valueString = valueString.substring(colonPos + 1);
+      int endPos = valueString.indexOf(",");
+      if (endPos == -1)
+        endPos = valueString.indexOf("}");
+      if (endPos != -1){
+        valueString = valueString.substring(0, endPos);
+        valueString.trim();
+        return valueString;
+      }
+    }
+  }
+  return "";
 }
 
 

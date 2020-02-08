@@ -12,7 +12,8 @@
 */
 
 #ifdef USES_P102
-#define P102_BUILD            6
+#define P102_BUILD            7
+#define P102_MAXPACKETSIZE    192  // absolute max for total payload = 250 bytes
 #define PLUGIN_102
 #define PLUGIN_ID_102         102
 
@@ -114,7 +115,7 @@ void P102_espnowSender(const char* kok, const char* key, uint8_t* mac){
 
 void P102_espnowSend(String msg){
   struct __attribute__((packed)) SENSOR_DATA {
-    char msg[64];
+    char msg[P102_MAXPACKETSIZE];
   }sensorData;
   strcpy(sensorData.msg, msg.c_str());  
   uint8_t bs[sizeof(sensorData)];
@@ -187,7 +188,7 @@ void P102_espnowReceiver(const char* kok, const char* key, uint8_t* mac){
       esp_now_set_kok((uint8_t*)kok,16);
       esp_now_register_recv_cb([](uint8_t *mac, uint8_t *data, uint8_t len) {
       struct __attribute__((packed)) SENSOR_DATA {
-        char msg[64];
+        char msg[P102_MAXPACKETSIZE];
       }sensorData;
         if(esp_now_is_peer_exist(mac)){
           String eventString = F("Event ESPNOW#");

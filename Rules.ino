@@ -8,18 +8,20 @@
 // Set Timer by name
 //********************************************************************************************
 void setTimer(String varName, unsigned int value) {
+  if(!mallocOK)
+    return;
 
   int pos = -1;
-  for (byte x = 0; x < RULES_TIMER_MAX; x++) {
-    if (RulesTimer[x].Name == varName) {
+  for (byte x = 0; x < Settings.TimerMax; x++) {
+    if (*RulesTimer[x].Name == varName) {
       RulesTimer[x].Value = value;
       return;
     }
-    if (pos == -1 && RulesTimer[x].Name.length() == 0)
+    if (pos == -1 && (*RulesTimer[x].Name).length() == 0)
       pos = x;
   }
   if (pos != -1) {
-    RulesTimer[pos].Name = varName;
+    *RulesTimer[pos].Name = varName;
     RulesTimer[pos].Value = value;
   }
 }
@@ -58,6 +60,24 @@ String rulesProcessing(String fileName, String& event)
   boolean condition = false;
   boolean ifBranche = false;
 
+  // JSON Handling
+  String strEventTopic = "";   // Will hold the topic, everything before the '=' token
+  String strEventPayload = ""; // Will hold the payload, everything after the '=' token
+  String strEventValue = "";   // Will hold the value. Equal to payload if not json. Parse "Value" when json detected
+  int equalsPos = event.indexOf("=");
+  if (equalsPos > 0){
+    strEventTopic = event.substring(0, equalsPos);
+    strEventPayload = event.substring(equalsPos+1);
+    int jsonPos = strEventPayload.indexOf("{");
+    if (jsonPos == 0){ // first position has { token, so parse json value
+      strEventValue = parseJSON(strEventPayload,"Value");
+      strEventValue.replace("\"",""); // We can only use the numeric value. In case padded with "", remove them
+    }
+    else{
+      strEventValue = strEventPayload;
+    }
+  }
+            
   byte buf[RULES_BUFFER_SIZE];
   int len = 0;
   while (f.available())
@@ -109,7 +129,7 @@ String rulesProcessing(String fileName, String& event)
               if (eventTrigger == "*") // wildcard, always process
                 match = true;
               else
-                match = ruleMatch(event, eventTrigger);
+                match = ruleMatch(event, eventTrigger, strEventValue);
               if (action.length() > 0) // single on/do/action line, no block
               {
                 isCommand = true;
@@ -143,11 +163,9 @@ String rulesProcessing(String fileName, String& event)
             {
               conditional = true;
               String check = lcAction.substring(split + 3);
-              int equalsPos = event.indexOf("=");
               if (equalsPos > 0)
               {
-                String tmpString = event.substring(equalsPos + 1);
-                check.replace("%eventvalue%", tmpString); // substitute %eventvalue% in condition with the actual value from the event
+                check.replace("%eventvalue%", strEventValue); // substitute %eventvalue% in condition with the actual value from the event
               }
               condition = conditionMatchExtended(check);
               ifBranche = true;
@@ -170,10 +188,10 @@ String rulesProcessing(String fileName, String& event)
             if (isCommand && ((!conditional) || (conditional && (condition == ifBranche))))
             {
               action.replace(F("%event%"), event); // substitute %event% with literal event string
-              int equalsPos = event.indexOf("=");
               if (equalsPos > 0){
-                String tmpString = event.substring(equalsPos + 1);
-                action.replace(F("%eventvalue%"), tmpString); // substitute %eventvalue% in actions with the actual value from the event
+                action.replace(F("%eventvalue%"), strEventValue);
+                action.replace(F("%eventtopic%"), strEventTopic);
+                action.replace(F("%eventpayload%"), strEventPayload);
               }
 
               if(Settings.LogEvents){
@@ -183,7 +201,14 @@ String rulesProcessing(String fileName, String& event)
               }
 
               delay(0);
-              ExecuteCommand(action.c_str());
+              // Check for specific call to another script. Then we call it from here and pass the full event
+              String cmd = parseString(action, 1);
+              if (cmd.equalsIgnoreCase(F("Call"))){
+                String scriptFileName = parseString(action, 2);
+                rulesProcessing(scriptFileName, event);  
+              }else{
+                ExecuteCommand(action.c_str());
+              }
               delay(0);
             }
           }
@@ -199,10 +224,12 @@ String rulesProcessing(String fileName, String& event)
 }
 
 
+        
+
 //********************************************************************************************
 // Check if an event matches to a given rule
 //********************************************************************************************
-boolean ruleMatch(String& event, String& rule)
+boolean ruleMatch(String& event, String& rule, String strValue)
 {
   boolean match = false;
   String tmpEvent = event;
@@ -243,9 +270,8 @@ boolean ruleMatch(String& event, String& rule)
   pos = event.indexOf("=");
   if (pos)
   {
-    tmpEvent = event.substring(pos + 1);
-    value = tmpEvent.toFloat();
     tmpEvent = event.substring(0, pos);
+    value = strValue.toFloat();
   }
 
   // parse rule
@@ -474,7 +500,10 @@ boolean conditionMatch(const String& check)
 //********************************************************************************************
 void rulesTimers()
 {
-  for (byte x = 0; x < RULES_TIMER_MAX; x++)
+  if(!mallocOK)
+    return;
+    
+  for (byte x = 0; x < Settings.TimerMax; x++)
   {
     if (RulesTimer[x].Value != 0L) // timer active?
     {
@@ -482,7 +511,7 @@ void rulesTimers()
       {
         RulesTimer[x].Value = 0L; // turn off this timer
         String event = F("Timer#");
-        event += RulesTimer[x].Name;
+        event += *RulesTimer[x].Name;
         rulesProcessing(FILE_RULES, event);
       }
     }

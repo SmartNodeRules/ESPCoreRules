@@ -108,7 +108,11 @@ void ExecuteCommand(const char *Line)
       IPAddress subnet = Settings.Subnet;
       IPAddress dns = Settings.DNS;
     }
-    
+
+    if (setting.equalsIgnoreCase(F("NodeListMax"))){
+      Settings.NodeListMax = Par2;
+    }
+
     #if FEATURE_PLUGINS
     if (setting.equalsIgnoreCase(F("Plugins"))){
       int parampos = getParamStartPos(strLine, 3);
@@ -148,6 +152,17 @@ void ExecuteCommand(const char *Line)
       Settings.TimeZone = Par2;
     }
 
+    if (setting.equalsIgnoreCase(F("TimerMax"))){
+      Settings.TimerMax = Par2;
+    }
+
+    if (setting.equalsIgnoreCase(F("UserVarNumericMax"))){
+      Settings.nUserVarMax = Par2;
+    }
+    if (setting.equalsIgnoreCase(F("UserVarStringMax"))){
+      Settings.sUserVarMax = Par2;
+    }
+
     if (setting.equalsIgnoreCase(F("WifiSSID")))
       strcpy(SecuritySettings.WifiSSID, strP1.c_str());
 
@@ -162,6 +177,12 @@ void ExecuteCommand(const char *Line)
 
     if (setting.equalsIgnoreCase(F("WifiAPKey")))
       strcpy(SecuritySettings.WifiAPKey, strP1.c_str());
+
+    if (setting.equalsIgnoreCase(F("WifiBSSID")))
+      parseBytes(strP1.c_str(), ':', Settings.BSSID, 6, 16);
+     
+    if (setting.equalsIgnoreCase(F("WifiChannel")))
+      Settings.WifiChannel = Par2;
 
     if (setting.equalsIgnoreCase(F("Rules"))){
       if(strP1.equalsIgnoreCase(F("Clock")))
@@ -224,6 +245,25 @@ void ExecuteCommand(const char *Line)
     }
   #endif
 
+  if (strcasecmp_P(Command, PSTR("ParseFromJSON")) == 0)
+  {
+    success = true;
+    String strLine = Line;
+    String varName = parseString(strLine, 2);
+    String jsonName = parseString(strLine, 3);
+    int jsonPos = getParamStartPos(strLine, 4);
+    String jsonPayload = strLine.substring(jsonPos);
+    String strJSONValue = parseJSON(jsonPayload, jsonName);
+    if(strJSONValue != ""){
+      if(strJSONValue[0] == '"'){
+        strJSONValue.replace("\"","");
+        setSvar(varName, strJSONValue);
+      }else{
+        setNvar(varName, strJSONValue.toFloat());
+      }
+    }
+  }
+  
   if (strcasecmp_P(Command, PSTR("Reboot")) == 0)
   {
     success = true;
@@ -247,7 +287,7 @@ void ExecuteCommand(const char *Line)
       logger->println(F("RESET: FORMAT SPIFFS FAILED!"));
     }
   }
-
+  
   if (strcasecmp_P(Command, PSTR("SendToUDP")) == 0)
   {
     success = true;
@@ -321,13 +361,18 @@ void ExecuteCommand(const char *Line)
     logger->println(F("System Info"));
     IPAddress ip = WiFi.localIP();
     sprintf_P(str, PSTR("%u.%u.%u.%u"), ip[0], ip[1], ip[2], ip[3]);
+    logger->print(F("  Name          : ")); logger->println(Settings.Name);
     logger->print(F("  IP Address    : ")); logger->println(str);
-    logger->print(F("  Build         : ")); logger->println((int)BUILD);
+    logger->print(F("  Build         : ")); logger->print((int)BUILD); logger->println(BUILD_NOTES);
     String core = getSystemLibraryString();
     logger->print(F("  Core          : ")); logger->println(core);
-    logger->print(F("  WifiSSID      : ")); logger->println(SecuritySettings.WifiSSID);
-    logger->print(F("  WifiKey       : ")); logger->println(SecuritySettings.WifiKey);
-    logger->print(F("  Wifi          : ")); logger->println(Settings.Wifi);
+    logger->print(F("  Wifi SSID     : ")); logger->println(SecuritySettings.WifiSSID);
+    logger->print(F("  Wifi Key      : ")); logger->println(SecuritySettings.WifiKey);
+    logger->print(F("  Wifi Channel  : ")); logger->println(Settings.WifiChannel);
+    sprintf_P(str, PSTR("%02X:%02X:%02X:%02X:%02X:%02X"), Settings.BSSID[0], Settings.BSSID[1], Settings.BSSID[2], Settings.BSSID[3],Settings.BSSID[4],Settings.BSSID[5]);
+    logger->print(F("  Wifi BSSID    : ")); logger->println(str);
+    logger->print(F("  Wifi Enabled  : ")); logger->println(Settings.Wifi);
+    logger->print(F("  Wifi Status   : ")); logger->println(WiFi.status());    
   }
 
 #if FEATURE_RULES
@@ -381,6 +426,62 @@ void ExecuteCommand(const char *Line)
     }
   }
 
+  if (strcasecmp_P(Command, PSTR("StringLength")) == 0)
+  {
+    success = true;
+    String strLine = Line;
+    String varName = parseString(strLine, 2);
+    String varNameSource = parseString(strLine, 3);
+    String tmp = getSvar(varNameSource);
+    setNvar(varName, tmp.length(),0);
+  }
+
+  if (strcasecmp_P(Command, PSTR("StringReplace")) == 0)
+  {
+    success = true;
+    String strLine = Line;
+    String varName = parseString(strLine, 2);
+    String replace = parseString(strLine, 3);
+    String replaceWith = parseString(strLine, 4);
+    String tmp = getSvar(varName);
+    tmp.replace(replace,replaceWith);
+    setSvar(varName, tmp);
+  }
+  
+  if (strcasecmp_P(Command, PSTR("StringSubstring")) == 0)
+  {
+    success = true;
+    String strLine = Line;
+    String varName = parseString(strLine, 2);
+    String varNameSource = parseString(strLine, 3);
+    String strStart = parseString(strLine, 4);
+    String strEnd = parseString(strLine, 5);
+    int startPos = 0;
+    int endPos = 0;
+
+    String tmp = getSvar(varNameSource);
+    if(strStart[0] != '"'){
+      startPos = strStart.toInt();
+    }else{
+      strStart.replace("\"","");
+      startPos = tmp.indexOf(strStart);
+    }
+
+    if(strEnd == ""){
+      endPos = tmp.length();
+    }else{
+      if(strEnd[0] != '"'){
+        endPos = strEnd.toInt();
+      }else{
+        strEnd.replace("\"","");
+        endPos = tmp.indexOf(strEnd);
+      }
+    }
+    
+    tmp = tmp.substring(startPos,endPos);
+    setSvar(varName, tmp);
+  }
+
   if (strcasecmp_P(Command, PSTR("Syslog")) == 0)
   {
     success = true;
@@ -430,7 +531,10 @@ void ExecuteCommand(const char *Line)
     String strLine = Line;
     String ssid = parseString(strLine, 2);
     String key = parseString(strLine, 3);
-    WiFi.begin(ssid.c_str(),key.c_str());
+    strcpy(SecuritySettings.WifiSSID, ssid.c_str());
+    strcpy(SecuritySettings.WifiKey, key.c_str());
+    WiFi.begin(SecuritySettings.WifiSSID, SecuritySettings.WifiKey);
+//    WifiInit();
   }
 
   if (strcasecmp_P(Command, PSTR("WifiInit")) == 0)

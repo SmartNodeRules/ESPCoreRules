@@ -1,15 +1,11 @@
-#define BUILD                               6
+#define BUILD                               7
 
 #define CMD_REBOOT                         89
-#define UNIT_MAX                           32
 #define PLUGIN_MAX                         32
 #define PLUGIN_FASTCALL_MAX                 8
 #define RULES_MAX_SIZE                   2048
 #define RULES_BUFFER_SIZE                  64
 #define RULES_MAX_NESTING_LEVEL             3
-#define RULES_TIMER_MAX                     8
-#define USER_VAR_MAX                        8
-#define USER_STRING_VAR_MAX                 8
 #define CONFIRM_QUEUE_MAX                   8
 #define INPUT_BUFFER_SIZE                 128
 
@@ -76,6 +72,16 @@ WebServer WebServer(80);
   #if FEATURE_ADC_VCC
     ADC_MODE(ADC_VCC);
   #endif
+
+  // Info on SPIFFS area
+  #define FLASH_EEPROM_SIZE 4096
+  extern "C" {
+    #include "spi_flash.h"
+  }
+  extern "C" uint32_t _SPIFFS_start;
+  extern "C" uint32_t _SPIFFS_end;
+  extern "C" uint32_t _SPIFFS_page;
+  extern "C" uint32_t _SPIFFS_block;
 #endif
 
 WiFiServer *ser2netServer;
@@ -93,8 +99,6 @@ struct SecurityStruct
   char          WifiSSID2[32];
   char          WifiKey2[64];
   char          WifiAPKey[64];
-  char          ControllerUser[64];
-  char          ControllerPassword[64];
 } SecuritySettings;
 
 struct SettingsStruct
@@ -102,6 +106,8 @@ struct SettingsStruct
   boolean       Wifi = true;
   boolean       AutoConnect = true;
   boolean       AutoAPOnFailure = true;
+  byte          BSSID[6];
+  byte          WifiChannel=0;
   byte          IP[4];
   byte          Gateway[4];
   byte          Subnet[4];
@@ -122,40 +128,46 @@ struct SettingsStruct
   boolean       UseNTP;
   int16_t       TimeZone;
   byte          SerialTelnet=0;
-  byte          Controller_IP[4];
-  unsigned int  ControllerPort;
   boolean       UseGratuitousARP = false;
   boolean       LogEvents = false;
   boolean       ForceAPMode = false;
+  byte          NodeListMax = 32;
+  byte          nUserVarMax = 8;
+  byte          sUserVarMax = 8;
+  byte          TimerMax = 8;
 } Settings;
 
 struct NodeStruct
 {
   byte IP[4];
   byte age;
-  String nodeName;
-  String group;
-} Nodes[UNIT_MAX];
+  String *nodeName;
+  String *group;
+};
+struct NodeStruct *Nodes;
 
 struct nvarStruct
 {
-  String Name;
+  String *Name;
   float Value;
   byte Decimals;
-} nUserVar[USER_VAR_MAX];
+};
+struct nvarStruct *nUserVar;
 
 struct svarStruct
 {
-  String Name;
-  String Value;
-} sUserVar[USER_STRING_VAR_MAX];
+  String *Name;
+  String *Value;
+};
+struct svarStruct *sUserVar;
 
 #if FEATURE_RULES
 struct timerStruct
 {
-  String Name;
+  String *Name;
   unsigned long Value;
-} RulesTimer[RULES_TIMER_MAX];
+};
+struct timerStruct *RulesTimer;
 #endif
 
 unsigned int NC_Count = 0;
@@ -201,3 +213,6 @@ Print* logger;
 void (*coreSerialCall_ptr)(void);
 void (*corePluginCall_ptr[PLUGIN_FASTCALL_MAX])(void);
 
+byte *sortedIndex;
+
+boolean mallocOK = false;

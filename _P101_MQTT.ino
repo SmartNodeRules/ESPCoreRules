@@ -4,14 +4,15 @@
 
 /*
  * Commands: 
- * MQTTinit
- * MQTTconnect <ip>,<port>
- * MQTTsubscribe <topic>
- * MQTTpublish <topic>,<payload>
+ * MQTTinit                           Init MQTT broker, it will generate MQTT#Connect event when ready
+ * MQTTconnect <ip>,<port>            Connect to MQTT broker on <ip> using port <port>
+ * MQTTsubscribe <topic>              Subscribe to MQTT topic
+ * MQTTpublish <topic>,<payload>      Publish an MQTT message
+ * MQTTNodeListInit                   Use the Nodelist and host announcements on MQTT (topic MSGBUS/)
 */
 
 #ifdef USES_P101
-#define P101_BUILD            6
+#define P101_BUILD            7
 #define PLUGIN_101
 #define PLUGIN_ID_101         101
 
@@ -21,6 +22,7 @@ PubSubClient *P101_MQTTclient;
 
 unsigned long P101_connectionFailures;
 boolean P101_Init = false;
+boolean P101_NodeListInit = false;
 
 boolean Plugin_101(byte function, String& cmd, String& params)
 {
@@ -44,6 +46,10 @@ boolean Plugin_101(byte function, String& cmd, String& params)
             P101_MQTTclient = new PubSubClient(*P101_mqtt);
             registerFastPluginCall(&P101_MQTTReceive);
             P101_Init = true;
+            #if FEATURE_RULES
+              String event = F("MQTT#Connect");
+              rulesProcessing(FILE_RULES, event);
+            #endif
           }
         }
         if (cmd.equalsIgnoreCase(F("MQTTconnect")))
@@ -51,18 +57,17 @@ boolean Plugin_101(byte function, String& cmd, String& params)
           success = true;
           if(P101_Init){
             char tmpString[26];
-            String strP1 = parseString(params,1);
-            String strP2 = parseString(params,2);
-            String strP3 = parseString(params,3);
-            String strP4 = parseString(params,4);
-            strP1.toCharArray(tmpString, 26);
-            str2ip(tmpString, Settings.Controller_IP);
-            Settings.ControllerPort = strP2.toInt();
-            strcpy(SecuritySettings.ControllerUser, strP3.c_str());
-            strcpy(SecuritySettings.ControllerPassword, strP4.c_str());
-            P101_MQTTConnect();
+            String strIP = parseString(params,1);
+            int port = parseString(params,2).toInt();
+            String user = parseString(params,3);
+            String password = parseString(params,4);
+            byte IP[4];
+            strIP.toCharArray(tmpString, 26);
+            str2ip(tmpString, IP);
+            IPAddress mqttIP(IP);
+            P101_MQTTConnect(mqttIP, port, user, password);
           }
-        }
+        }        
         if (cmd.equalsIgnoreCase(F("MQTTpublish")))
         {
           success = true;
@@ -80,6 +85,17 @@ boolean Plugin_101(byte function, String& cmd, String& params)
             P101_MQTTclient->subscribe(params.c_str());
           }
         }
+        
+        if (cmd.equalsIgnoreCase(F("MQTTNodeListInit")))
+        {
+          success = true;
+          if(P101_Init){
+            P101_NodeListInit = true;
+            String msgbus = F("MSGBUS/#");
+            P101_MQTTclient->subscribe(msgbus.c_str());
+          }
+        }
+       
         break;
       }
 
@@ -87,6 +103,8 @@ boolean Plugin_101(byte function, String& cmd, String& params)
       {
         if(P101_Init && WifiConnected()){
           P101_MQTTCheck();
+          if(P101_NodeListInit)
+            P101_MSGBusAnnounceMe();
         }
         break;
       }
@@ -118,6 +136,24 @@ void P101_callback(char* c_topic, byte* b_payload, unsigned int length) {
   msg.replace("\r","");
   msg.replace("\n","");
 
+  // Process MSGBUS hostname events
+  if(P101_NodeListInit){
+    if (topic == F("MSGBUS/Hostname")) {
+      String hostName = parseJSON(msg, "Hostname");
+      hostName.replace("\"","");
+      String group = parseJSON(msg, "Groupname");
+      group.replace("\"","");
+      String IP = parseJSON(msg, "IP");
+      IP.replace("\"","");
+      char tmpString[26];
+      byte IPaddress[4];
+      IP.toCharArray(tmpString, 26);
+      str2ip(tmpString, IPaddress);
+      IPAddress remoteHostIP = IPaddress;
+      nodelist(remoteHostIP, hostName, group);
+    }
+  }
+
   #if FEATURE_RULES
     String event = topic;
     event += "=";
@@ -130,10 +166,9 @@ void P101_callback(char* c_topic, byte* b_payload, unsigned int length) {
 /*********************************************************************************************\
  * Connect to MQTT message broker
 \*********************************************************************************************/
-void P101_MQTTConnect()
+void P101_MQTTConnect(IPAddress IP, int port, String user, String password)
 {
-  IPAddress MQTTBrokerIP(Settings.Controller_IP);
-  P101_MQTTclient->setServer(MQTTBrokerIP, Settings.ControllerPort);
+  P101_MQTTclient->setServer(IP, port);
   P101_MQTTclient->setCallback(P101_callback);
 
   // MQTT needs a unique clientname to subscribe to broker
@@ -154,8 +189,8 @@ void P101_MQTTConnect()
     //boolean connect(const char* id, const char* willTopic, uint8_t willQos, boolean willRetain, const char* willMessage);
     //boolean connect(const char* id, const char* user, const char* pass, const char* willTopic, uint8_t willQos, boolean willRetain, const char* willMessage);
 
-    if ((SecuritySettings.ControllerUser[0] != 0) && (SecuritySettings.ControllerPassword[0] != 0))
-      MQTTresult = P101_MQTTclient->connect(clientid.c_str(), SecuritySettings.ControllerUser, SecuritySettings.ControllerPassword, LWTTopic.c_str(), 0, 0, LWTMsg.c_str());
+    if ((user != "") && (password != ""))
+      MQTTresult = P101_MQTTclient->connect(clientid.c_str(), user.c_str(), password.c_str(), LWTTopic.c_str(), 0, 0, LWTMsg.c_str());
     else
       MQTTresult = P101_MQTTclient->connect(clientid.c_str(), LWTTopic.c_str(), 0, 0, LWTMsg.c_str());
 
@@ -192,10 +227,36 @@ void P101_MQTTCheck()
     P101_connectionFailures += 2;
     P101_MQTTclient->disconnect();
     delay(1000);
-    P101_MQTTConnect();
+    #if FEATURE_RULES
+      String event = F("MQTT#Connect");
+      rulesProcessing(FILE_RULES, event);
+    #endif
   }
   else if (P101_connectionFailures)
     P101_connectionFailures--;
 }
+
+//********************************************************************************************
+// Send message bus hostname announcement
+//********************************************************************************************
+void P101_MSGBusAnnounceMe() {
+
+  char strIP[20];
+  IPAddress ip = WiFi.localIP();
+  sprintf_P(strIP, PSTR("%u.%u.%u.%u"), ip[0], ip[1], ip[2], ip[3]);
+
+  String topic = F("MSGBUS/Hostname");
+  String payload = F("{\"Hostname\":\"");
+  payload += Settings.Name;
+  payload += "\",\"IP\":\"";
+  payload += strIP;
+  payload += "\",\"Groupname\":\"";
+  payload += Settings.Group;
+  payload += "\",\"Mac\":\"";
+  payload +=  WiFi.macAddress();
+  payload += "\"}";
+  P101_MQTTclient->publish(topic.c_str(), payload.c_str());
+}
+
 #endif
 

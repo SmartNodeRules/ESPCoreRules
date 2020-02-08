@@ -5,18 +5,20 @@ void WifiInit() {
   String event = "";
   
   #if SERIALDEBUG
-    Serial.println("Start Wificonnect");
+    Serial.println("Start WifiInit");
   #endif
-    
-  WifiAPconfig();
 
   #if defined(ESP8266)
     WiFi.forceSleepWake();
     delay(1);
   #endif
   WiFi.mode(WIFI_STA);
-  WifiConnect(3);
 
+  if(WifiConnect(2)){
+  }else
+  {
+    WifiAPMode(true);    
+  }
   #if SERIALDEBUG
     Serial.println("End Wificonnect");
   #endif
@@ -26,14 +28,16 @@ void WifiInit() {
   #endif
   WebServerInit();
 
-  // Add myself to the node list
-  IPAddress IP = WiFi.localIP();
-  for (byte x = 0; x < 4; x++)
-    Nodes[0].IP[x] = IP[x];
-  Nodes[0].age = 0;
-  Nodes[0].nodeName = Settings.Name;
-  Nodes[0].group = Settings.Group;
-
+  // Add myself to the node list (if UnitMax is not set to zero)
+  if (Settings.NodeListMax){
+    IPAddress IP = WiFi.localIP();
+    for (byte x = 0; x < 4; x++)
+      Nodes[0].IP[x] = IP[x];
+    Nodes[0].age = 0;
+    *Nodes[0].nodeName = Settings.Name;
+    *Nodes[0].group = Settings.Group;
+  }
+  
   #if SERIALDEBUG
     Serial.println("Start TelnetServer");
   #endif
@@ -46,7 +50,8 @@ void WifiInit() {
 
   #if FEATURE_TIME
     if(Settings.UseTime)
-      initTime();
+      if(WifiConnected())
+        initTime();
   #endif
 
   #ifdef FEATURE_ARDUINO_OTA
@@ -60,6 +65,9 @@ void WifiInit() {
   #if FEATURE_RULES
   if(Settings.Wifi){
     if(WiFi.status() == WL_CONNECTED){
+      #if SERIALDEBUG
+        Serial.println("Wifi Connected");
+      #endif
       String event = F("WiFi#Connected");
       rulesProcessing(FILE_RULES, event);
     }
@@ -100,7 +108,13 @@ void WifiAPconfig()
   ap_ssid[0] = 0;
   strcpy(ap_ssid, "ESP_");
   sprintf_P(ap_ssid, PSTR("%s%s"), ap_ssid, Settings.Name);
-  WiFi.softAP(ap_ssid, SecuritySettings.WifiAPKey,6,true);
+  if(SecuritySettings.WifiAPKey[0] == 0)
+    strcpy(SecuritySettings.WifiAPKey, FACTORY_APKEY);
+  #if SERIALDEBUG
+    Serial.print("Wifi AP config with key:");
+    Serial.println(SecuritySettings.WifiAPKey);
+  #endif
+  WiFi.softAP(ap_ssid, SecuritySettings.WifiAPKey,6,false);
 }
 
 
@@ -115,6 +129,7 @@ void WifiAPMode(boolean state)
         Serial.println("Wifi AP-STA forced");
       #endif
       AP_Mode = true;
+      WifiAPconfig();
       WiFi.mode(WIFI_AP_STA);
     }
     return;
@@ -127,6 +142,7 @@ void WifiAPMode(boolean state)
         Serial.println("Wifi AP-STA");
       #endif
       AP_Mode = true;
+      WifiAPconfig();
       WiFi.mode(WIFI_AP_STA);
     }
   }
@@ -149,13 +165,17 @@ void WifiAPMode(boolean state)
 boolean WifiConnect(byte connectAttempts)
 {
   String log = "";
-
-  if (WiFi.status() != WL_CONNECTED)
+  #if SERIALDEBUG
+    Serial.print("Wifi Status:");
+    Serial.println(WiFi.status());
+  #endif
+      
+  if (WiFi.status() == WL_CONNECTED){
+    return true;
+  }else
   {
     if (Settings.IP[0] != 0 && Settings.IP[0] != 255)
     {
-      char str[20];
-      sprintf_P(str, PSTR("%u.%u.%u.%u"), Settings.IP[0], Settings.IP[1], Settings.IP[2], Settings.IP[3]);
       IPAddress ip = Settings.IP;
       IPAddress gw = Settings.Gateway;
       IPAddress subnet = Settings.Subnet;
@@ -165,6 +185,12 @@ boolean WifiConnect(byte connectAttempts)
 
     if ((SecuritySettings.WifiSSID[0] != 0)  && (strcasecmp(SecuritySettings.WifiSSID, "ssid") != 0))
     {
+      #if SERIALDEBUG
+          Serial.print("Wificonnect:");
+          Serial.print(millis());
+          Serial.println(" mS:");
+      #endif
+
       for (byte tryConnect = 1; tryConnect <= connectAttempts; tryConnect++)
       {
         #if SERIALDEBUG
@@ -174,23 +200,32 @@ boolean WifiConnect(byte connectAttempts)
           Serial.println(tryConnect);
         #endif
 
-        if (tryConnect == 1)
-          WiFi.begin(SecuritySettings.WifiSSID, SecuritySettings.WifiKey);
+        if (tryConnect == 1){
+          if(Settings.WifiChannel == 0) 
+            WiFi.begin(SecuritySettings.WifiSSID, SecuritySettings.WifiKey);
+          else
+            WiFi.begin(SecuritySettings.WifiSSID, SecuritySettings.WifiKey, Settings.WifiChannel, Settings.BSSID);
+        }
         else
           WiFi.begin();
 
-        for (byte x = 0; x < 20; x++)
+        for (int x = 0; x < 1000; x++)
         {
           if (WiFi.status() != WL_CONNECTED)
           {
-            delay(500);
+            delay(10);
           }
           else
             break;
         }
         if (WiFi.status() == WL_CONNECTED)
         {
-          break;
+          #if SERIALDEBUG
+            Serial.print("Wificonnected:");
+            Serial.print(millis());
+            Serial.println(" mS:");
+          #endif
+          return true;
         }
         else
         {
@@ -203,11 +238,8 @@ boolean WifiConnect(byte connectAttempts)
         }
       }
     }
-    else
-    {
-      WifiAPMode(true);
-    }
   }
+  return false;
 }
 
 

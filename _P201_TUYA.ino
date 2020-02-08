@@ -4,9 +4,9 @@
 
 /*
  * Commands:
- * tuyaCheck                                            Checks tuya device and creates events
- * tuyaSend <cmd>,<len>,<value>                         Send a serial message to the 'tuya' MCU as used on LSC Smart Connect PIR and Doorsensors
- * tuyaCheckProbe <ssid>,<channel>,<dev-id>,<dev-type>  Checks tuya device and uses Wifi probe 'hack' to send state
+ * tuyaCheck                         Checks tuya device with firmware 1.0.0.4 and creates events
+ * tuyaRead                          Checks tuya device with firmware 1.0.0.0 and creates events
+ * tuyaSend <cmd>,<len>,<value>      For debugging, Send a serial message to the 'tuya' MCU
  * 
  * Still debugging. Official documentation does not seem to match with commands used for PIR/Doorsensor
  *   tuyasend 1,0,0	Get device info from MCU
@@ -18,9 +18,11 @@
 */
 
 #ifdef USES_P201
-#define P201_BUILD            6
+#define P201_BUILD            7
 #define PLUGIN_201
 #define PLUGIN_ID_201         201
+
+#define P201_DEBUG false
 
 boolean Plugin_201(byte function, String& cmd, String& params)
 {
@@ -40,11 +42,53 @@ boolean Plugin_201(byte function, String& cmd, String& params)
         if (cmd.equalsIgnoreCase(F("tuyaSend")))
         {
           success = true;
+          Serial.begin(9600);
           byte cmd = parseString(params,1).toInt();
           byte len = parseString(params,2).toInt();
           byte val = parseString(params,3).toInt();
-          P201_tuyaSend(cmd,len,val);
+          P201_tuyaSend(cmd,len,val,500);
         }
+
+        // This command just reads the output after boot. For firmware 1.0.0.0
+        // Delay can be up to 4-5 seconds when setup button is pressed before the MCU will output a message
+        if (cmd.equalsIgnoreCase(F("tuyaRead")))
+        {
+          success = true;
+          Serial.begin(9600);
+          byte status = P201_tuyaRead(5000);
+          if(status !=0){
+            // There was real MCU communication, take over serial control within the plugin
+            coreSerialCall_ptr=&P201_serial;
+            if(status < 64){ // only continue when the device was not started using the device 'connect' button
+              if(status & 2){
+                #if FEATURE_RULES
+                  String eventString = F("TUYA#Event=");
+                  eventString += ((status & 4) >> 2);
+                  rulesProcessing(FILE_RULES, eventString);
+                #endif
+                delay(1000);
+                status = P201_tuyaSend(1,0,0,500);
+                status = P201_tuyaSend(2,1,2,500);
+                status = P201_tuyaSend(2,1,3,500);
+                status = P201_tuyaSend(2,1,4,500);
+                status = P201_tuyaSend(5,1,0,500);
+                status = P201_tuyaSend(5,1,0,500);
+                Settings.AutoConnect = false; // Do not let wifi connect, so ESPNOW will keep working
+              }
+              if(status & 32){
+                #if FEATURE_RULES
+                  String eventString = F("TUYA#BatteryLow=1");
+                  rulesProcessing(FILE_RULES, eventString);
+                #endif
+              }
+            }else{
+              // Setup button was used
+            }
+          }
+        }
+
+        // This command sends a status command and then reads the output. For firmware 1.0.0.4
+        // MCU will power off after reading status 2,4
         if (cmd.equalsIgnoreCase(F("tuyaCheck")))
         {
           success = true;
@@ -53,11 +97,11 @@ boolean Plugin_201(byte function, String& cmd, String& params)
           int8_t status2 = -1;
           int8_t status3 = -1;
           int8_t status4 = -1;
-          status1 = P201_tuyaSend(1,0,0);
-          status2 = P201_tuyaSend(2,1,2);
-          status3 = P201_tuyaSend(2,1,3);
+          status1 = P201_tuyaSend(1,0,0,500);
+          status2 = P201_tuyaSend(2,1,2,500);
+          status3 = P201_tuyaSend(2,1,3,500);
           if(status2 < 64){ // only continue when the device was not started using the device 'connect' button
-            status4 = P201_tuyaSend(2,1,4);
+            status4 = P201_tuyaSend(2,1,4,500);
             if(status4 & 2){
               #if FEATURE_RULES
                 String eventString = F("TUYA#Event=");
@@ -72,19 +116,6 @@ boolean Plugin_201(byte function, String& cmd, String& params)
               #endif
             }
           }
-          #if FEATURE_RULES
-            String eventString = F("TUYA#Debug=");
-            eventString += status1;
-            eventString += ",";
-            eventString += status2;
-            eventString += ",";
-            eventString += status3;
-            eventString += ",";
-            eventString += status4;
-            eventString += ",";
-            eventString += millis();
-            rulesProcessing(FILE_RULES, eventString);
-          #endif
         }
         break;
       }
@@ -93,7 +124,28 @@ boolean Plugin_201(byte function, String& cmd, String& params)
 }
 
 
-byte P201_tuyaSend(byte cmd, byte len, byte value)
+// Function to take over control of serial input
+// After initial handling, the Tuya firmware 1.0.0.0 devices remain active and during that state, new events could arrive on serial
+// They will be handled within the normal main loop, but serial is redirected to this function to properly handle further Tuya MCU events
+// (Tuya Firmware 1.0.0.4 does not use this as the device will poweroff almost immediatly after sending the initial message)
+void P201_serial(){
+  if(Serial.available()){
+    byte status = P201_tuyaRead(1);
+    if(status < 64){ // only continue when the device was not started using the device 'connect' button
+      if(status & 2){
+        #if FEATURE_RULES
+          String eventString = F("TUYA#Event=");
+          eventString += ((status & 4) >> 2);
+          rulesProcessing(FILE_RULES, eventString);
+        #endif
+      }
+    }          
+  }  
+}
+
+
+// Send a serial message according to Tuya serial protocol, with headers and checksum calculation
+byte P201_tuyaSend(byte cmd, byte len, byte value, byte wait)
 {
   while (Serial.available())
     Serial.read();
@@ -110,19 +162,28 @@ byte P201_tuyaSend(byte cmd, byte len, byte value)
   Serial.write(cs);
   Serial.flush();
 
-  // wait max 500 mSec for reply
-  for (int x = 0; x < 500; x++){
+  return P201_tuyaRead(wait);
+
+}
+
+
+// Read serial output from the Tuya MCU, wait for a given time in mSec. Returns 0 if no reply within the wait time
+byte P201_tuyaRead(int wait)
+{
+  if(wait == 0)
+    wait=500;
+
+  // wait max 'wait' mSec for reply
+  for (int x = 0; x < wait; x++){
     if (Serial.available())
       break;
     delay(1);
   }
 
-  // prepare for logging
-  String reply = "";
-  reply += cmd;
-  reply += "-";
-  reply += value;
-  reply += ":";
+  #if P201_DEBUG
+    // prepare for debug logging
+    String reply = "";
+  #endif
   
   byte count = 0;       // count number of bytes received within a message
   byte msgType = 0;     // stores message type (byte 4)
@@ -143,14 +204,21 @@ byte P201_tuyaSend(byte cmd, byte len, byte value)
     // 55 aa 0 2 0 0 1  basic confirm
     // 55 aa 0 3 0 0 2  this is received only when the sensor was activated using 5 seconds button press, additional reply after tuyasend 2,1,2
 
-    // Status messages from door sensor:
-    // 55 aa 0 5 0 5 1 1 0 1 1 d  door open
-    // 55 aa 0 5 0 5 1 1 0 1 0 c  door closed
-    // 55 aa 0 5 0 5 3 4 0 1 2 13 battery OK
-    // 55 aa 0 5 0 5 3 4 0 1 0 11 battery low (around 2.5 Volts, DoorSensor keeps working until 2.3 Volts)
+    // Status messages from door sensor: (1.0.0.4)
+    // 1  2  3 4 5 6 7 8 9 10 11 12
+    // 55 aa 0 5 0 5 1 1 0 1  1  d  door open
+    // 55 aa 0 5 0 5 1 1 0 1  0  c  door closed
+    // 55 aa 0 5 0 5 3 4 0 1  2  13 battery OK
+    // 55 aa 0 5 0 5 3 4 0 1  0  11 battery low (around 2.5 Volts, DoorSensor keeps working until 2.3 Volts)
 
     // 55 aa 0 5 0 5 1 4 0 1 0 f  PIR
-  
+
+    // Tuya firmware 1.0.0.0:
+    // 1  2  3 4 5 6 7  8 9 10 11 12
+    // 55 AA 0 5 0 5 65 1 0 1  1  71 door open
+    // 55 AA 0 5 0 5 65 1 0 1  0  70 door closed
+    // 55 AA 0 5 0 8 67 2 0 4  0  0  0 4C C5  batt?
+
   // process reply
   while (Serial.available()){
     count++;
@@ -169,17 +237,19 @@ byte P201_tuyaSend(byte cmd, byte len, byte value)
         event = data;
     }
 
-    // add to logging, msg type 1 is readable text containing device info in json format
-    if(msgType == 1){
-      if(count > 6 && data != 0){
-        reply += (char)data;
+    #if P201_DEBUG
+      // add to logging, msg type 1 is readable text containing device info in json format
+      if(msgType == 1){
+        if(count > 6 && data != 0){
+          reply += (char)data;
+        }
       }
-    }
-    else{ // other msg types are binary, so display as HEX
-      reply += String(data, HEX);
-      reply += " ";
-    }
-
+      else{ // other msg types are binary, so display as HEX
+        reply += String(data, HEX);
+        reply += " ";
+      }
+   #endif
+    
     // Check if message is complete, based on msg length (header + checksum = 7 bytes)
     if(count == length + 7){
       
@@ -191,35 +261,37 @@ byte P201_tuyaSend(byte cmd, byte len, byte value)
         status |= 64; // set bit 6, sensor button pressed for 5 seconds
       }
 
-      if(msgType == 5 && devState == 1){ // msg type 5 is a status message, devState 1 indicates the open/close state
+      if(msgType == 5 && (devState && 3) == 1){ // msg type 5 is a status message, devState 1 (with mask 3) indicates the open/close state
         status |= 2; // set bit 2, event received
         if(event)
           status |= 4; //set event state bit 3
       }
 
-      if(msgType == 5 && devState == 3){ // msg type 5 is a status message, devState 3 battery info
+      if(msgType == 5 && (devState && 3) == 3){ // msg type 5 is a status message, devState 3 (with mask 3) indicates battery info
         if(event == 0)
           status |= 32; //set battery low bit 5
       }
 
-               
-      // add to logging string
-      if(devState != 0){
-        reply += " devState:";
-        reply += devState;
-      }
-      reply += " msg:";
-      reply += msgType;
-      reply += " length:";
-      reply += length;
-      if(event != 255){
-        reply += " event:";
-        reply += event;
-      }
+      #if P201_DEBUG
+        // add to logging string
+        if(devState != 0){
+          reply += " devState:";
+          reply += devState;
+        }
+        reply += " msg:";
+        reply += msgType;
+        reply += " length:";
+        reply += length;
+        if(event != 255){
+          reply += " event:";
+          reply += event;
+        }
+        // report logging
+        P102_espnowSend(reply);
+        reply = "";
+      #endif
       
-      // report logging and reset counters, status bytes, etc..
-//    syslog(reply);
-      reply = "";
+      // reset counters, status bytes, etc..  for next message to process
       count = 0;
       length = 0;
       msgType = 0;

@@ -27,8 +27,13 @@ void setup2()
   #endif
   
   ConfigInit();
-    
+
   serialInit();
+    
+  mallocOK = mallocVars();
+  if(!mallocOK)
+    Serial.println(F("memory allocations issue!"));
+    
   if(Settings.Wifi && Settings.AutoConnect){
     WifiInit();
   }
@@ -56,7 +61,7 @@ void loop()
     if(corePluginCall_ptr[x] != 0)
       corePluginCall_ptr[x]();
   
-  if(WifiConnected()){
+  if(WifiConnected() || AP_Mode){
     WebServer.handleClient();
 
     telnet();

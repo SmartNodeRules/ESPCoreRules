@@ -295,6 +295,11 @@ unsigned long getNtpTime()
   udp.begin(123);
   for (byte x = 1; x < 4; x++)
   {
+    #if SERIALDEBUG
+      Serial.print("Get NTP Time try:");
+      Serial.println(x);
+    #endif
+
     const int NTP_PACKET_SIZE = 48; // NTP time is in the first 48 bytes of message
     byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming & outgoing packets
 
@@ -321,13 +326,17 @@ unsigned long getNtpTime()
     while (millis() - beginWait < 2000) {
       int size = udp.parsePacket();
       if (size >= NTP_PACKET_SIZE) {
-         udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
+        udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
         unsigned long secsSince1900;
         // convert four bytes starting at location 40 to a long integer
         secsSince1900 =  (unsigned long)packetBuffer[40] << 24;
         secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
         secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
         secsSince1900 |= (unsigned long)packetBuffer[43];
+        #if SERIALDEBUG
+          Serial.print("Got NTP Time:");
+          Serial.println(secsSince1900);
+        #endif
         return secsSince1900 - 2208988800UL + Settings.TimeZone * SECS_PER_MIN;
       }
     }
